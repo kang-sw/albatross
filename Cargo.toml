@@ -1,8 +1,8 @@
 [package]
-name = "algo"
+name = "albatross"
+description = "Set of algorithms for personal usage."
 version = "0.1.0"
 edition = "2021"
-
 
 [dependencies]
 num = "0.4"
