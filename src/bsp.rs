@@ -21,18 +21,20 @@ pub trait ElementData {
 }
 
 /// A BSP tree implementation. Hard limit of tree depth is 65,535.
+#[derive(Clone)]
 pub struct Tree<T: ElementData> {
     nodes: SlotMap<TreeNodeIndex, TreeNode<T>>,
     elems: SlotMap<ElementIndex, TreeElement<T>>,
     root: TreeNodeIndex,
 }
 
-#[derive(EnumAsInner)]
+#[derive(Clone, EnumAsInner)]
 enum TreeNode<T: ElementData> {
     Split(TreeNodeSplit<T>),
     Leaf(TreeNodeLeaf<T>),
 }
 
+#[derive(Clone)]
 struct TreeNodeSplit<T: ElementData> {
     axis: AxisIndex,
     value: <T::Vector as Vector>::Num,
@@ -40,6 +42,7 @@ struct TreeNodeSplit<T: ElementData> {
     plus: TreeNodeIndex,
 }
 
+#[derive(Clone)]
 struct TreeNodeLeaf<T: ElementData> {
     /// For faster evaluation when the node moves
     bound: AabbRect<T::Vector>,
@@ -48,13 +51,15 @@ struct TreeNodeLeaf<T: ElementData> {
     len: u32,
 }
 
-/* --------------------------------------- Public Tree API -------------------------------------- */
+/* ----------------------------------------- Trait Impls ---------------------------------------- */
 
 impl<T: ElementData> Default for Tree<T> {
     fn default() -> Self {
         Self::new()
     }
 }
+
+/* --------------------------------------- Public Tree API -------------------------------------- */
 
 impl<T: ElementData> Tree<T> {
     pub fn with_capacity(capacity: usize) -> Self {
@@ -487,37 +492,39 @@ fn update_inner_recurse<T: ElementData, F: FnMut(&mut TreeElementEdit<T>)>(
                 let mut edit = TreeElementEdit::new(tree, elem_index);
                 update_element(&mut edit);
 
-                let (moved, removed) = (edit.moved, edit.removed);
-                edit.moved = false; // Prevent default move drop guard to run.
+                if !edit.moved {
+                    // In this case, it's just okay to let the default drop guard to deal
+                    // with the result(untouched / removed).
+                    continue;
+                }
 
                 // Since in this context we have to deal with the deferred
                 // relocation to prevent update logic run duplicates on single
                 // elemnt, here we have to manually deal with `moved` response.
+                edit.moved = false; // Prevent default move drop guard to run.
                 drop(edit);
 
-                if !removed && moved {
-                    // SAFETY: `elem_index` is proven exist.
-                    let elem = unsafe { tree.elems.get_unchecked_mut(elem_index) };
+                // SAFETY: `elem_index` is proven exist.
+                let elem = unsafe { tree.elems.get_unchecked_mut(elem_index) };
 
-                    // Check if element position still resides in current leaf
-                    // node's boundary.
-                    if leaf_bound.contains(&elem.pos) {
-                        // It's just okay with no-op.
-                        continue;
-                    }
-
-                    // If it was moved, put it to pending-relocate list
-
-                    // SAFETY: We're already aware that node and element are valid!
-                    let elem = unsafe {
-                        tree.unlink(elem_index);
-                        tree.elems.get_unchecked_mut(elem_index)
-                    };
-
-                    // It's okay with just monodirectional link.
-                    elem.next = *relocate_head;
-                    *relocate_head = elem_index;
+                // Check if element position still resides in current leaf
+                // node's boundary.
+                if leaf_bound.contains(&elem.pos) {
+                    // It's just okay with no-op.
+                    continue;
                 }
+
+                // If it was moved, put it to pending-relocate list
+
+                // SAFETY: We're already aware that node and element are valid!
+                let elem = unsafe {
+                    tree.unlink(elem_index);
+                    tree.elems.get_unchecked_mut(elem_index)
+                };
+
+                // It's okay with just monodirectional link.
+                elem.next = *relocate_head;
+                *relocate_head = elem_index;
             }
         }
     }
@@ -525,6 +532,7 @@ fn update_inner_recurse<T: ElementData, F: FnMut(&mut TreeElementEdit<T>)>(
 
 /* ----------------------------------------- Entity Type ---------------------------------------- */
 
+#[derive(Debug, Clone)]
 pub struct TreeElement<T: ElementData> {
     data: T,
 
@@ -626,8 +634,6 @@ impl<'a, T: ElementData> TreeElementEdit<'a, T> {
 impl<T: ElementData> Drop for TreeElementEdit<'_, T> {
     fn drop(&mut self) {
         if self.removed {
-            // A bit more optimized approach for `self.this.remove(self.elem)`
-
             // SAFETY: `self.elem` is valid.
             unsafe { self.tree.unlink(self.elem) };
             self.tree.elems.remove(self.elem);
