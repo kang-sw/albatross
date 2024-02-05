@@ -128,10 +128,7 @@ impl<T: ElementData> Tree<T> {
     /// If one iterating tree node indexes that was hit by query, relocation can move the
     /// element into the node that not visited yet, which makes the iteration on same
     /// element occur more than once.
-    pub fn iter_leaf_mut(
-        &mut self,
-        id: TreeNodeIndex,
-    ) -> impl Iterator<Item = &mut TreeElement<T>> {
+    pub fn iter_leaf_mut(&mut self, id: TreeNodeIndex) -> impl Iterator<Item = TreeElementEdit<T>> {
         Some(todo!()).into_iter()
     }
 
@@ -141,7 +138,6 @@ impl<T: ElementData> Tree<T> {
         let elem_index = self.elems.insert(TreeElement {
             data: entity,
             pos,
-            moved: false,
             owner: TreeNodeIndex::null(),
             prev: ElementIndex::null(),
             next: ElementIndex::null(),
@@ -171,8 +167,12 @@ impl<T: ElementData> Tree<T> {
         self.elems.get(id)
     }
 
-    pub fn get_mut(&mut self, id: ElementIndex) -> Option<&mut TreeElement<T>> {
-        self.elems.get_mut(id)
+    pub fn get_mut(&mut self, id: ElementIndex) -> Option<TreeElementEdit<T>> {
+        if self.elems.contains_key(id) {
+            Some(TreeElementEdit::new(self, id))
+        } else {
+            None
+        }
     }
 }
 
@@ -349,7 +349,7 @@ impl<T: ElementData> Tree<T> {
             let (on_query_hit, cut_m_p) = methods;
             let split = match &tree.nodes[node_index] {
                 TreeNode::Split(sp) => sp,
-                TreeNode::Leaf(leaf) => {
+                TreeNode::Leaf(_) => {
                     on_query_hit(tree, node_index);
                     return;
                 }
@@ -386,39 +386,6 @@ impl<T: ElementData> Tree<T> {
 
 /* ---------------------------------------- Update Logic ---------------------------------------- */
 
-/// Response to update.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ElementUpdateResponse {
-    Relocated,
-    Untouched,
-    Removed,
-}
-
-impl From<()> for ElementUpdateResponse {
-    fn from(_: ()) -> Self {
-        Self::Relocated
-    }
-}
-
-impl From<bool> for ElementUpdateResponse {
-    fn from(b: bool) -> Self {
-        if b {
-            Self::Relocated
-        } else {
-            Self::Untouched
-        }
-    }
-}
-
-impl From<Option<bool>> for ElementUpdateResponse {
-    fn from(opt: Option<bool>) -> Self {
-        match opt {
-            Some(b) => b.into(),
-            None => Self::Removed,
-        }
-    }
-}
-
 impl<T: ElementData> Tree<T> {
     /// This method updates the internal status of nodes within a tree structure and
     /// serves as a form of garbage collection (GC) for managing the elements within the
@@ -453,10 +420,7 @@ impl<T: ElementData> Tree<T> {
     ///   tree. The closure's return type, `R`, must be convertible into an
     ///   `ElementUpdateResponse`, dictating the action to be taken for the element it is
     ///   applied to.
-    pub fn update<R>(&mut self, mut updator: impl FnMut(&mut TreeElement<T>) -> R)
-    where
-        R: Into<ElementUpdateResponse>,
-    {
+    pub fn update<R>(&mut self, mut updator: impl FnMut(&mut TreeElementEdit<T>)) {
         // 1. Iterate every nodes
 
         // 2. Split node evaluates `merge score`
@@ -500,23 +464,14 @@ impl<T: ElementData> Tree<T> {
 
         /* ------------------------------------ Inline Items ------------------------------------ */
 
-        struct UpdateContext<
-            'a,
-            T: ElementData,
-            F: FnMut(&mut TreeElement<T>) -> R,
-            R: Into<ElementUpdateResponse>,
-        > {
+        struct UpdateContext<'a, T: ElementData, F: FnMut(&mut TreeElementEdit<T>)> {
             tree: &'a mut Tree<T>,
             updator: &'a mut F,
             relocate_head: ElementIndex,
         }
 
-        fn recurse_update<
-            T: ElementData,
-            F: FnMut(&mut TreeElement<T>) -> R,
-            R: Into<ElementUpdateResponse>,
-        >(
-            ctx: &mut UpdateContext<T, F, R>,
+        fn recurse_update<T: ElementData, F: FnMut(&mut TreeElementEdit<T>)>(
+            ctx: &mut UpdateContext<T, F>,
             node: TreeNodeIndex,
         ) {
             let UpdateContext {
@@ -544,35 +499,39 @@ impl<T: ElementData> Tree<T> {
 
                         debug_assert!(elem.owner == node);
 
-                        match update_element(elem).into() {
-                            ElementUpdateResponse::Relocated => {
-                                // Check if element position still resides in current leaf
-                                // node's boundary.
-                                if leaf_bound.contains(&elem.pos) {
-                                    // It's just okay with no-op.
-                                    continue;
-                                }
+                        let mut edit = TreeElementEdit::new(tree, elem_index);
+                        update_element(&mut edit);
 
-                                // If it was moved, put it to pending-relocate list
+                        let (moved, removed) = (edit.moved, edit.removed);
+                        edit.moved = false; // Prevent default move drop guard to run.
 
-                                // SAFETY: We're already aware that node and element are valid!
-                                unsafe { tree.unlink(elem_index) };
+                        // Since in this context we have to deal with the deferred
+                        // relocation to prevent update logic run duplicates on single
+                        // elemnt, here we have to manually deal with `moved` response.
+                        drop(edit);
 
-                                let elem = &mut tree.elems[elem_index];
+                        if !removed && moved {
+                            // SAFETY: `elem_index` is proven exist.
+                            let elem = unsafe { tree.elems.get_unchecked_mut(elem_index) };
 
-                                // It's okay with just monodirectional link.
-                                elem.next = *relocate_head;
-                                *relocate_head = elem_index;
+                            // Check if element position still resides in current leaf
+                            // node's boundary.
+                            if leaf_bound.contains(&elem.pos) {
+                                // It's just okay with no-op.
+                                continue;
                             }
-                            ElementUpdateResponse::Removed => {
-                                // SAFETY: We're already aware that node and element are valid!
-                                unsafe { tree.unlink(elem_index) };
-                                tree.elems.remove(elem_index);
-                            }
-                            ElementUpdateResponse::Untouched => {
-                                // The updator function MUST be properly implemented.
-                                debug_assert!(leaf_bound.contains(&elem.pos));
-                            }
+
+                            // If it was moved, put it to pending-relocate list
+
+                            // SAFETY: We're already aware that node and element are valid!
+                            let elem = unsafe {
+                                tree.unlink(elem_index);
+                                tree.elems.get_unchecked_mut(elem_index)
+                            };
+
+                            // It's okay with just monodirectional link.
+                            elem.next = *relocate_head;
+                            *relocate_head = elem_index;
                         }
                     }
                 }
@@ -587,7 +546,6 @@ pub struct TreeElement<T: ElementData> {
     data: T,
 
     pos: T::Vector,
-    moved: bool,
 
     // Retaining owner
     //
@@ -610,11 +568,6 @@ impl<E: ElementData> TreeElement<E> {
         &self.pos
     }
 
-    pub fn set_pos(&mut self, pos: E::Vector) {
-        self.pos = pos;
-        self.moved = true;
-    }
-
     pub fn owner(&self) -> TreeNodeIndex {
         self.owner
     }
@@ -631,6 +584,115 @@ impl<E: ElementData> std::ops::Deref for TreeElement<E> {
 impl<E: ElementData> std::ops::DerefMut for TreeElement<E> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.data
+    }
+}
+
+/* ---------------------------------------- Element Proxy --------------------------------------- */
+
+pub struct TreeElementEdit<'a, T: ElementData> {
+    tree: &'a mut Tree<T>,
+    elem: ElementIndex,
+    moved: bool,
+    removed: bool,
+}
+
+impl<'a, T: ElementData> TreeElementEdit<'a, T> {
+    fn new(this: &'a mut Tree<T>, elem: ElementIndex) -> Self {
+        debug_assert!(this.elems.contains_key(elem));
+
+        Self {
+            tree: this,
+            elem,
+            moved: false,
+            removed: false,
+        }
+    }
+
+    fn _get_elem_mut(&mut self) -> &mut TreeElement<T> {
+        // SAFETY: On creation, element validity is verified
+        unsafe { self.tree.elems.get_unchecked_mut(self.elem) }
+    }
+
+    fn _get_elem(&self) -> &TreeElement<T> {
+        // SAFETY: On creation, element validity is verified
+        unsafe { self.tree.elems.get_unchecked(self.elem) }
+    }
+
+    pub fn pos(&self) -> &T::Vector {
+        &self._get_elem().pos
+    }
+
+    pub fn owner(&self) -> TreeNodeIndex {
+        self._get_elem().owner
+    }
+
+    pub fn set_pos(&mut self, pos: T::Vector) {
+        debug_assert!(!self.removed, "Trying to modify removed element");
+
+        self._get_elem_mut().pos = pos;
+        self.moved = true;
+    }
+
+    pub fn remove(&mut self) {
+        debug_assert!(!self.removed, "Trying to modify removed element");
+
+        self.removed = true;
+    }
+}
+
+impl<T: ElementData> Drop for TreeElementEdit<'_, T> {
+    fn drop(&mut self) {
+        if self.removed {
+            // A bit more optimized approach for `self.this.remove(self.elem)`
+
+            // SAFETY: `self.elem` is valid.
+            unsafe { self.tree.unlink(self.elem) };
+            self.tree.elems.remove(self.elem);
+        } else if self.moved {
+            // SAFETY: `self.elem` is valid element resides in valid node.
+            unsafe {
+                let elem = self.tree.elems.get_unchecked_mut(self.elem);
+                let owner_index = elem.owner;
+
+                let (elem, owner) = (
+                    elem,
+                    self.tree
+                        .nodes
+                        .get_unchecked(owner_index)
+                        .as_leaf()
+                        .unwrap(),
+                );
+
+                if owner.bound.contains(&elem.pos) {
+                    return;
+                }
+
+                let pos = elem.pos;
+                let leaf = self.tree.query(&pos);
+
+                debug_assert!(owner_index != leaf);
+
+                // SAFETY: `leaf` and `elem` both are valid.
+                self.tree.unlink(self.elem);
+                self.tree.push_link_back(leaf, self.elem);
+
+                self.tree.elems.get_unchecked_mut(self.elem).relocated(leaf);
+            };
+        }
+    }
+}
+
+impl<'a, E: ElementData> std::ops::Deref for TreeElementEdit<'a, E> {
+    type Target = E;
+
+    fn deref(&self) -> &Self::Target {
+        &self._get_elem().data
+    }
+}
+
+impl<'a, E: ElementData> std::ops::DerefMut for TreeElementEdit<'a, E> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self._get_elem_mut().data
     }
 }
 

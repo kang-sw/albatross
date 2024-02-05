@@ -479,7 +479,7 @@ pub(crate) fn collapse_recursive<T: ElementData>(
             head.prev = root_tail;
 
             if !head.owner.is_null() {
-                // Mark the very first owner node as null to indicate this node is
+                // Mark the very first owner node as null to indicate the entire node is
                 // being relocated.
                 head.owner = TreeNodeIndex::null();
             }
