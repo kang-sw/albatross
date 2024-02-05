@@ -1,0 +1,18 @@
+[package]
+name = "algo"
+version = "0.1.0"
+edition = "2021"
+
+
+[dependencies]
+num = "0.4"
+num-traits = "0.2"
+slotmap = "1"
+
+tap = "1"
+fixed = "1"
+
+thiserror = "1"
+
+derive_more = "0.99"
+enum-as-inner = "0.6"
