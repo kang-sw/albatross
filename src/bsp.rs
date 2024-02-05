@@ -432,17 +432,13 @@ impl<T: ElementData> Tree<T> {
 
         let root = self.root;
 
-        let mut context = UpdateContext {
-            tree: self,
-            updator: &mut updator,
-            relocate_head: ElementIndex::null(),
-        };
+        let mut context = (&mut *self, &mut updator, ElementIndex::null());
 
         // Phase 1: Recursive element update
-        recurse_update(&mut context, root);
+        update_inner_recurse(&mut context, root);
 
         // Phase 2: Insert all floating elements.
-        let mut relocate = context.relocate_head;
+        let mut relocate = context.2;
 
         while !relocate.is_null() {
             let elem = &mut self.elems[relocate];
@@ -461,79 +457,66 @@ impl<T: ElementData> Tree<T> {
                 self.elems.get_unchecked_mut(elem_index).relocated(leaf);
             };
         }
+    }
+}
 
-        /* ------------------------------------ Inline Items ------------------------------------ */
+fn update_inner_recurse<T: ElementData, F: FnMut(&mut TreeElementEdit<T>)>(
+    ctx: &mut (&mut Tree<T>, &mut F, ElementIndex),
+    node: TreeNodeIndex,
+) {
+    let (tree, update_element, relocate_head) = ctx;
 
-        struct UpdateContext<'a, T: ElementData, F: FnMut(&mut TreeElementEdit<T>)> {
-            tree: &'a mut Tree<T>,
-            updator: &'a mut F,
-            relocate_head: ElementIndex,
+    match tree.nodes[node] {
+        TreeNode::Split(TreeNodeSplit { minus, plus, .. }) => {
+            update_inner_recurse(ctx, minus);
+            update_inner_recurse(ctx, plus);
         }
+        TreeNode::Leaf(TreeNodeLeaf {
+            bound: leaf_bound,
+            head: leaf_head,
+            ..
+        }) => {
+            let mut elem_index = leaf_head;
 
-        fn recurse_update<T: ElementData, F: FnMut(&mut TreeElementEdit<T>)>(
-            ctx: &mut UpdateContext<T, F>,
-            node: TreeNodeIndex,
-        ) {
-            let UpdateContext {
-                tree,
-                updator: update_element,
-                relocate_head,
-                ..
-            } = ctx;
+            while !elem_index.is_null() {
+                let elem = &mut tree.elems[elem_index];
+                elem_index = elem.next;
 
-            match tree.nodes[node] {
-                TreeNode::Split(TreeNodeSplit { minus, plus, .. }) => {
-                    recurse_update(ctx, minus);
-                    recurse_update(ctx, plus);
-                }
-                TreeNode::Leaf(TreeNodeLeaf {
-                    bound: leaf_bound,
-                    head: leaf_head,
-                    ..
-                }) => {
-                    let mut elem_index = leaf_head;
+                debug_assert!(elem.owner == node);
 
-                    while !elem_index.is_null() {
-                        let elem = &mut tree.elems[elem_index];
-                        elem_index = elem.next;
+                let mut edit = TreeElementEdit::new(tree, elem_index);
+                update_element(&mut edit);
 
-                        debug_assert!(elem.owner == node);
+                let (moved, removed) = (edit.moved, edit.removed);
+                edit.moved = false; // Prevent default move drop guard to run.
 
-                        let mut edit = TreeElementEdit::new(tree, elem_index);
-                        update_element(&mut edit);
+                // Since in this context we have to deal with the deferred
+                // relocation to prevent update logic run duplicates on single
+                // elemnt, here we have to manually deal with `moved` response.
+                drop(edit);
 
-                        let (moved, removed) = (edit.moved, edit.removed);
-                        edit.moved = false; // Prevent default move drop guard to run.
+                if !removed && moved {
+                    // SAFETY: `elem_index` is proven exist.
+                    let elem = unsafe { tree.elems.get_unchecked_mut(elem_index) };
 
-                        // Since in this context we have to deal with the deferred
-                        // relocation to prevent update logic run duplicates on single
-                        // elemnt, here we have to manually deal with `moved` response.
-                        drop(edit);
-
-                        if !removed && moved {
-                            // SAFETY: `elem_index` is proven exist.
-                            let elem = unsafe { tree.elems.get_unchecked_mut(elem_index) };
-
-                            // Check if element position still resides in current leaf
-                            // node's boundary.
-                            if leaf_bound.contains(&elem.pos) {
-                                // It's just okay with no-op.
-                                continue;
-                            }
-
-                            // If it was moved, put it to pending-relocate list
-
-                            // SAFETY: We're already aware that node and element are valid!
-                            let elem = unsafe {
-                                tree.unlink(elem_index);
-                                tree.elems.get_unchecked_mut(elem_index)
-                            };
-
-                            // It's okay with just monodirectional link.
-                            elem.next = *relocate_head;
-                            *relocate_head = elem_index;
-                        }
+                    // Check if element position still resides in current leaf
+                    // node's boundary.
+                    if leaf_bound.contains(&elem.pos) {
+                        // It's just okay with no-op.
+                        continue;
                     }
+
+                    // If it was moved, put it to pending-relocate list
+
+                    // SAFETY: We're already aware that node and element are valid!
+                    let elem = unsafe {
+                        tree.unlink(elem_index);
+                        tree.elems.get_unchecked_mut(elem_index)
+                    };
+
+                    // It's okay with just monodirectional link.
+                    elem.next = *relocate_head;
+                    *relocate_head = elem_index;
                 }
             }
         }
