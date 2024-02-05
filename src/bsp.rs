@@ -124,17 +124,54 @@ impl<T: ElementData> Tree<T> {
         self.root
     }
 
+    /// # Panics
+    ///
+    /// `id` is invalid.
     pub fn iter_leaf(&self, id: TreeNodeIndex) -> impl Iterator<Item = &TreeElement<T>> {
-        Some(todo!()).into_iter()
+        struct TreeIter<'a, T: ElementData> {
+            tree: &'a Tree<T>,
+            elem: ElementIndex,
+        }
+
+        impl<'a, T: ElementData> Iterator for TreeIter<'a, T> {
+            type Item = &'a TreeElement<T>;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                // SAFETY: as long as it exist, the index is always valid.
+                // - We're utilizing unchecked version here to skip version validation.
+
+                if self.elem.is_null() {
+                    return None;
+                }
+
+                unsafe {
+                    let elem = self.tree.elems.get_unchecked(self.elem);
+
+                    self.elem = elem.next;
+                    Some(elem)
+                }
+            }
+        }
+
+        TreeIter {
+            elem: self.nodes[id].as_leaf().unwrap().head,
+            tree: self,
+        }
     }
+
+    // TODO: Find way to implement `iter_leaf_mut`
 
     /// # Try not to relocate element
     ///
     /// If one iterating tree node indexes that was hit by query, relocation can move the
     /// element into the node that not visited yet, which makes the iteration on same
     /// element occur more than once.
-    pub fn iter_leaf_mut(&mut self, id: TreeNodeIndex) -> impl Iterator<Item = TreeElementEdit<T>> {
-        Some(todo!()).into_iter()
+    pub fn visit_leaf_mut<'a>(
+        &'a mut self,
+        id: TreeNodeIndex,
+        visit: impl FnMut(&mut TreeElementEdit<T>),
+    ) {
+        todo!()
     }
 
     pub fn insert(&mut self, pos: T::Vector, entity: T) -> ElementIndex {
