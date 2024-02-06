@@ -76,6 +76,7 @@ pub trait NumberCommon {
     const MAXVALUE: Self;
 
     fn to_f64(&self) -> f64;
+    fn from_f64(value: f64) -> Self;
 }
 
 pub trait Vector:
@@ -192,6 +193,10 @@ mod _impl_fixed {
             fn to_f64(&self) -> f64 {
                 *self as f64
             }
+
+            fn from_f64(value: f64) -> Self {
+                value as Self
+            }
         })*
     };
 }
@@ -206,6 +211,10 @@ mod _impl_fixed {
 
                 fn to_f64(&self) -> f64 {
                     (*self).to_num()
+                }
+
+                fn from_f64(value: f64) -> Self {
+                    Self::from_num(value)
                 }
             }
         };

@@ -1,10 +1,9 @@
 use enum_as_inner::EnumAsInner;
-use slotmap::Key as _;
+use slotmap::Key;
 use tap::Pipe as _;
 use tap::Tap as _;
 
 use super::ElementData;
-use super::ElementIndex;
 use super::Tree;
 use super::TreeNode;
 use super::TreeNodeIndex;
@@ -12,7 +11,7 @@ use super::TreeNodeLeaf;
 use super::TreeNodeSplit;
 
 use crate::primitive::AabbRect;
-use crate::primitive::AxisIndex;
+use crate::primitive::NumberCommon;
 use crate::primitive::Vector;
 use crate::primitive::VectorExt;
 use crate::ControlIntensity;
@@ -152,12 +151,8 @@ impl OptimizeParameter {
 
 /// This is to manage outer context which relies on tree node indices.
 #[derive(EnumAsInner)]
-pub enum OptimizationEvent<V: Vector> {
+pub enum OptimizationEvent {
     Split {
-        region: AabbRect<V>,
-        axis: AxisIndex,
-        value: <V as Vector>::Num,
-
         from: TreeNodeIndex,
         minus: TreeNodeIndex,
         plus: TreeNodeIndex,
@@ -195,7 +190,7 @@ impl<T: ElementData> Tree<T> {
     pub fn optimize(
         &mut self,
         params: &OptimizeParameter,
-        mut on_update: impl FnMut(OptimizationEvent<T::Vector>),
+        mut on_update: impl FnMut(OptimizationEvent),
     ) {
         /*
             PSEUDO IMPLMENTATION OF CODE
@@ -293,9 +288,9 @@ impl<T: ElementData> Tree<T> {
         */
 
         let root = self.root;
-        recurse_phase_1(&mut (self, &mut on_update, params), 0, root);
-
-        todo!()
+        let context = &mut (self, &mut on_update, params);
+        recurse_phase_1(context, 0, root);
+        recurse_phase_2(context, 0, root);
     }
 }
 
@@ -334,7 +329,7 @@ macro_rules! f {
 pub(crate) fn recurse_phase_1<T: ElementData>(
     context: &mut (
         &mut Tree<T>,
-        &mut impl FnMut(OptimizationEvent<T::Vector>),
+        &mut impl FnMut(OptimizationEvent),
         &OptimizeParameter,
     ),
     depth: u16,
@@ -389,8 +384,8 @@ pub(crate) fn recurse_phase_1<T: ElementData>(
                     // This is just temporary value.
                     bound: AabbRect::maximum(),
 
-                    head: ElementIndex::null(),
-                    tail: ElementIndex::null(),
+                    head: Key::null(),
+                    tail: Key::null(),
                     len: 0,
                 });
 
@@ -429,7 +424,7 @@ pub(crate) fn recurse_phase_1<T: ElementData>(
 pub(crate) fn collapse_recursive<T: ElementData>(
     context: &mut (
         &mut Tree<T>,
-        &mut impl FnMut(OptimizationEvent<T::Vector>),
+        &mut impl FnMut(OptimizationEvent),
         &OptimizeParameter,
     ),
     bounds: &mut [T::Vector; 2],
@@ -457,7 +452,10 @@ pub(crate) fn collapse_recursive<T: ElementData>(
             bounds[0] = bounds[0].min_values(leaf.bound.min());
             bounds[1] = bounds[1].max_values(leaf.bound.max());
 
-            if leaf.head.is_null() {
+            if let Some(head) = tree.elems.get_mut(leaf.head) {
+                // Mark elements from this node as 'pending validation'
+                head.owner = Key::null();
+            } else {
                 debug_assert!(leaf.len == 0);
                 debug_assert!(leaf.tail.is_null());
 
@@ -465,27 +463,29 @@ pub(crate) fn collapse_recursive<T: ElementData>(
                 return;
             }
 
-            // Append all elems to root
-            let root = tree.nodes[root_id].as_leaf_mut().unwrap();
-            let head = &mut tree.elems[leaf.head];
+            // Append all elements to root node's tail.
+            unsafe {
+                let root = tree.nodes.get_unchecked_mut(root_id).as_leaf_mut().unwrap();
+                let [leaf_head, leaf_tail] = tree
+                    .elems
+                    .get_disjoint_unchecked_mut([leaf.head, leaf.tail]);
 
-            // Appending list of nodes to another is O(n) when it's first time,
-            // O(1) when it is recursively collapsed. The `owner` field decided to
-            // be retained as compared to its memory and calculation overhead, the
-            // advantage of it was more significant.
-            let root_tail = root.tail;
-            root.len += leaf.len;
-            root.tail = leaf.head;
-            head.prev = root_tail;
+                root.len += leaf.len;
 
-            if !head.owner.is_null() {
-                // Mark the very first owner node as null to indicate the entire node is
-                // being relocated.
-                head.owner = TreeNodeIndex::null();
-            }
+                if root.tail.is_null() {
+                    debug_assert!(root.head.is_null());
+                    root.head = leaf.head;
+                    root.tail = leaf.tail;
+                } else {
+                    debug_assert!(!root.head.is_null());
 
-            if let Some(tail) = tree.elems.get_mut(root_tail) {
-                tail.next = leaf.head;
+                    let prev_root_tail = root.tail;
+                    leaf_head.prev = root.tail;
+                    leaf_tail.next = Key::null();
+                    root.tail = leaf.tail;
+
+                    tree.elems.get_unchecked_mut(prev_root_tail).next = leaf.head;
+                }
             }
         }
     }
@@ -495,7 +495,7 @@ pub(crate) fn collapse_recursive<T: ElementData>(
 pub(crate) fn recurse_phase_2<T: ElementData>(
     context: &mut (
         &mut Tree<T>,
-        &mut impl FnMut(OptimizationEvent<T::Vector>),
+        &mut impl FnMut(OptimizationEvent),
         &OptimizeParameter,
     ),
     depth: u16,
@@ -506,12 +506,11 @@ pub(crate) fn recurse_phase_2<T: ElementData>(
             // This is dead simple; just visit children nodes.
             recurse_phase_2(context, depth + 1, minus);
             recurse_phase_2(context, depth + 1, plus);
+
+            return; // Returns early.
         }
         TreeNode::Leaf(TreeNodeLeaf {
-            bound,
-            head,
-            tail,
-            len,
+            bound, head, len, ..
         }) => {
             let (tree, on_update, params) = context;
             let over_depth = depth.saturating_sub(params.ideal_depth_limit);
@@ -522,7 +521,8 @@ pub(crate) fn recurse_phase_2<T: ElementData>(
                 })
                 .pipe(|x| x as usize);
 
-            if (len as usize) < thres {
+            if (len as usize) <= thres {
+                //            ^^ Makes zero always return.
                 return;
             }
 
@@ -531,6 +531,133 @@ pub(crate) fn recurse_phase_2<T: ElementData>(
             // 2. StdVar per axes
             // 3. a. Spatial Median
             // 3. b. Cluster Median
+
+            let mut avg = tree
+                .iter_leaf(node)
+                .fold(T::Vector::zero_f64(), |mut val, elem| {
+                    for i in 0..T::Vector::D {
+                        val[i] += elem.pos[i].to_f64();
+                    }
+                    val
+                });
+
+            for i in 0..T::Vector::D {
+                avg[i] /= len as f64;
+            }
+
+            let variant = tree
+                .iter_leaf(node)
+                .fold(T::Vector::zero_f64(), |mut val, elem| {
+                    for i in 0..T::Vector::D {
+                        val[i] += (elem.pos[i].to_f64() - avg[i]).powi(2);
+                    }
+                    val
+                });
+
+            let axis = (0..T::Vector::D)
+                .max_by(|&a, &b| variant[a].partial_cmp(&variant[b]).unwrap())
+                .unwrap();
+
+            let split_at = match params.split_strategy {
+                SplitStrategy::Average => avg[axis],
+                SplitStrategy::SpatialMedian => todo!("Weighted average of distance from center"),
+                SplitStrategy::ClusterMedian => todo!("Weighted average of distance from center"),
+            };
+
+            let split_at = <T::Vector as Vector>::Num::from_f64(split_at);
+
+            // Create new splitted subnodes.
+            let minus = { bound }.tap_mut(|x| x.split_minus(axis, split_at));
+            let plus = { bound }.tap_mut(|x| x.split_plus(axis, split_at));
+
+            let minus_id = tree.nodes.insert(TreeNode::Leaf(TreeNodeLeaf {
+                bound: minus,
+                head: Key::null(),
+                tail: Key::null(),
+                len: 0,
+            }));
+
+            let plus_id = tree.nodes.insert(TreeNode::Leaf(TreeNodeLeaf {
+                bound: plus,
+                head: Key::null(),
+                tail: Key::null(),
+                len: 0,
+            }));
+
+            let [minus, plus] = unsafe {
+                tree.nodes
+                    .get_disjoint_unchecked_mut([minus_id, plus_id])
+                    .map(|x| x.as_leaf_mut().unwrap())
+            };
+
+            // Move all elements to subnodes.
+            let mut next_head_id = head;
+
+            while let Some(head) = tree.elems.get_mut(next_head_id) {
+                let head_id = next_head_id;
+                next_head_id = head.next;
+                head.next = Key::null();
+
+                let subnode = if head.pos[axis] < split_at {
+                    &mut *minus
+                } else {
+                    &mut *plus
+                };
+
+                subnode.len += 1;
+
+                if subnode.tail.is_null() {
+                    subnode.head = head_id;
+                    subnode.tail = head_id;
+                    head.prev = Key::null();
+                } else {
+                    head.prev = subnode.tail;
+
+                    unsafe {
+                        tree.elems.get_unchecked_mut(subnode.tail).next = head_id;
+                    }
+
+                    subnode.tail = head_id;
+                }
+            }
+
+            // Mark this node as `pending validation` by setting head node's owner as
+            // null. Since split operation can be performed multiple times over same
+            // element, changing the owner of every element everytime is a bit redundant.
+            for subnode in [minus, plus] {
+                if let Some(head) = tree.elems.get_mut(subnode.head) {
+                    head.owner = Key::null();
+                }
+            }
+
+            // Change this node into split. SAFETY: node is VALID!
+            unsafe {
+                *tree.nodes.get_unchecked_mut(node) = TreeNode::Split(TreeNodeSplit {
+                    minus: minus_id,
+                    plus: plus_id,
+                    axis,
+                    value: split_at,
+                })
+            };
+
+            // Notify split
+            on_update(OptimizationEvent::Split {
+                from: node,
+                minus: minus_id,
+                plus: plus_id,
+            });
         }
     }
+
+    // Intentionally adopt early-return style to clean up stacks before recursion.
+
+    let [minus, plus] = unsafe {
+        match f!(context.tree).nodes.get_unchecked(node) {
+            TreeNode::Split(TreeNodeSplit { minus, plus, .. }) => [*minus, *plus],
+            _ => unreachable!(),
+        }
+    };
+
+    recurse_phase_1(context, depth + 1, minus);
+    recurse_phase_1(context, depth + 1, plus);
 }
