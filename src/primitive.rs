@@ -333,6 +333,10 @@ impl<V: Vector> AabbRect<V> {
         area
     }
 
+    pub fn length(&self, axis: AxisIndex) -> V::Num {
+        self.max[axis] - self.min[axis]
+    }
+
     pub fn center(&self) -> V {
         let mut center = V::zero();
         for i in 0..V::D {

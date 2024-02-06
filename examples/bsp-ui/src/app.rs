@@ -1,3 +1,5 @@
+use egui::RichText;
+
 #[derive(Default)]
 pub struct TemplateApp {
     // Example stuff:
@@ -25,13 +27,13 @@ impl eframe::App for TemplateApp {
             // Render boids / grids
             let resp = self.model.draw(ui, &self.render_opt);
 
-            if resp.clicked() {
+            if resp.clicked_by(egui::PointerButton::Secondary) {
                 let pos = ctx.input(|i| i.pointer.interact_pos().unwrap());
                 let pos = boids::to_world(pos, self.render_opt.offset, self.render_opt.zoom);
 
-                self.model.spawn_boids(self.spawn_count.max(10), pos);
+                self.model.spawn_boids(self.spawn_count.max(25), pos);
             }
-            if resp.dragged() {
+            if resp.dragged_by(egui::PointerButton::Primary) {
                 let delta = resp.drag_delta();
                 self.render_opt.offset[0] += delta.x;
                 self.render_opt.offset[1] += delta.y;
@@ -42,10 +44,61 @@ impl eframe::App for TemplateApp {
             }
         });
 
-        egui::Window::new("Settings").show(ctx, |ui| {
+        egui::Window::new("Boid").show(ctx, |ui| {
+            egui::CollapsingHeader::new("Stats")
+                .default_open(true)
+                .show(ui, |ui| {
+                    let stat = self.model.stats().back().unwrap();
+                    let label_value_pairs = [
+                        ("Count", stat.elem_count.to_string()),
+                        ("Tick Time", format!("{:.3} ms", stat.tick_time * 1000.)),
+                        (
+                            "Avg Query Time",
+                            format!("{:.6} ms", stat.avg_query_time * 1000.),
+                        ),
+                        (
+                            "Avg Step Time",
+                            format!("{:.6} ms", stat.avg_step_time * 1000.),
+                        ),
+                        ("Elem Count", stat.elem_count.to_string()),
+                        (
+                            "Optimize Time",
+                            format!("{:.6} ms", stat.optimize_time * 1000.),
+                        ),
+                        ("Verify Time", format!("{:.3} ms", stat.verify_time * 1000.)),
+                    ];
+
+                    for (label, value) in label_value_pairs.iter() {
+                        ui.columns(2, |cols| {
+                            cols[0].label(*label);
+                            cols[1].monospace(RichText::new(value).color(egui::Color32::WHITE));
+                        });
+                    }
+                });
+
             egui::CollapsingHeader::new("Boids")
                 .default_open(true)
-                .show(ui, |ui| {});
+                .show(ui, |ui| {
+                    let label_param_pairs = [
+                        ("Area Radius", &mut self.model.area_radius),
+                        ("View Radius", &mut self.model.view_radius),
+                        ("Near Radius", &mut self.model.near_radius),
+                        ("Cohesion Force", &mut self.model.cohesion_force),
+                        ("Align Force", &mut self.model.align_force),
+                        ("Separation Force", &mut self.model.separation_force),
+                    ];
+
+                    for (label, param) in label_param_pairs {
+                        ui.horizontal(|ui| {
+                            ui.label(label);
+                            ui.add(
+                                egui::DragValue::new(param)
+                                    .speed(0.01)
+                                    .clamp_range(0.01..=1e3),
+                            );
+                        });
+                    }
+                });
 
             egui::CollapsingHeader::new("Visualize")
                 .default_open(true)
@@ -122,6 +175,7 @@ mod boids {
     pub struct Stats {
         pub tick_time: f64,
         pub avg_query_time: f64,
+        pub avg_proc_time: f64,
         pub avg_step_time: f64,
         pub elem_count: usize,
         pub optimize_time: f64,
@@ -135,17 +189,16 @@ mod boids {
                 bsp: Default::default(),
                 rand: fastrand::Rng::with_seed(0),
 
-                area_radius: 100.,
-                view_radius: 5.,
+                area_radius: 30.,
+                view_radius: 3.,
                 near_radius: 0.5,
-                cohesion_force: 0.1,
+                cohesion_force: 0.2,
                 align_force: 0.1,
-                separation_force: 0.1,
+                separation_force: 0.5,
 
                 stat_max_record: 120,
-
-                tree_optimize: bsp::OptimizeParameter::moderate(20).with(|x| {
-                    x.collapse_threshold = 0;
+                tree_optimize: bsp::OptimizeParameter::moderate(4).with(|x| {
+                    x.minimum_size = 1.;
                 }),
 
                 stats: Default::default(),
@@ -184,6 +237,7 @@ mod boids {
         fn calc_force(&mut self) {
             let start_time;
             let mut query_count;
+            let mut query_time = 0.;
 
             {
                 let mut q_elems = self.ecs.query::<(&BoidKinetic, &bsp::ElementIndex)>();
@@ -203,6 +257,8 @@ mod boids {
                     adjacent_kinetics.clear();
 
                     // Query all nearby boids
+                    let query_start = Instant::now();
+
                     self.bsp.query_region(&region, |tree| {
                         for (elem_id, elem) in self.bsp.leaf_iter(tree) {
                             if elem_id == *tree_key {
@@ -221,7 +277,9 @@ mod boids {
                         }
                     });
 
+                    query_time += query_start.elapsed().as_secs_f64();
                     if adjacent_kinetics.is_empty() {
+                        force.acc = Default::default();
                         continue;
                     }
 
@@ -258,7 +316,8 @@ mod boids {
                 }
             }
 
-            self.wr_stat().avg_query_time = start_time.elapsed().as_secs_f64() / query_count as f64;
+            self.wr_stat().avg_query_time = query_time / query_count as f64;
+            self.wr_stat().avg_proc_time = start_time.elapsed().as_secs_f64() / query_count as f64;
             self.wr_stat().elem_count = query_count;
         }
 
@@ -272,8 +331,10 @@ mod boids {
             {
                 kin.vel += force.acc * dt as f32;
 
-                if kin.pos.norm() > self.area_radius * 1.5 {
-                    kin.vel = -kin.vel * 0.5;
+                if kin.pos.norm() > self.area_radius * 1.1 {
+                    kin.vel = -kin.pos * 0.02;
+                    kin.vel[0] += (self.rand.f32() - 0.5) * self.area_radius * 0.01;
+                    kin.vel[1] += (self.rand.f32() - 0.5) * self.area_radius * 0.01;
                 }
 
                 kin.pos += kin.vel * dt as f32;
@@ -330,6 +391,10 @@ mod boids {
                     )
                     .unwrap();
             }
+        }
+
+        pub fn count(&self) -> usize {
+            self.ecs.len() as _
         }
     }
 
@@ -418,6 +483,37 @@ mod boids {
                     egui::Stroke {
                         width: 1.0,
                         color: BOID_COLOR,
+                    },
+                );
+            }
+
+            // Draw boid sights
+            for (_entity, boid) in self.ecs.query::<&BoidKinetic>().iter() {
+                let pos = to_screen(boid.pos, offset, zoom);
+
+                let Some(cursor_pos) = ui.input(|i| i.pointer.hover_pos()) else {
+                    continue;
+                };
+
+                if egui::Pos2::from(pos).distance(cursor_pos) > 50. {
+                    continue;
+                }
+
+                p.circle_stroke(
+                    pos.into(),
+                    self.view_radius * zoom,
+                    Stroke {
+                        color: egui::Color32::YELLOW,
+                        width: 1.0,
+                    },
+                );
+
+                p.circle_stroke(
+                    pos.into(),
+                    self.near_radius * zoom,
+                    Stroke {
+                        color: egui::Color32::RED,
+                        width: 1.0,
                     },
                 );
             }

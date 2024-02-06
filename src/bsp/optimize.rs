@@ -124,6 +124,9 @@ pub struct OptimizeParameter {
     /// optimal split point, affecting the spatial distribution of elements within the    
     /// tree and the efficiency of spatial queries.
     pub split_strategy: SplitStrategy,
+
+    /// Specifies minimum size
+    pub minimum_size: f64,
 }
 
 impl OptimizeParameter {
@@ -149,6 +152,7 @@ impl OptimizeParameter {
             balance_coeff: ControlIntensity::Moderate,
             node_height_coeff: ControlIntensity::Moderate,
             split_strategy: SplitStrategy::Average,
+            minimum_size: 0.,
         }
     }
 
@@ -162,6 +166,7 @@ impl OptimizeParameter {
             balance_coeff: ControlIntensity::Disable,
             node_height_coeff: ControlIntensity::Disable,
             split_strategy: SplitStrategy::Average,
+            minimum_size: 0.,
         }
     }
 }
@@ -370,6 +375,10 @@ pub(crate) fn recurse_phase_1<T: ElementData>(
                 let cnt2 = r2.count as usize;
                 let total = cnt1 + cnt2;
 
+                if total == 0 {
+                    break 'collapse true;
+                }
+
                 let balance_coeff = params.balance_coeff as usize;
                 let unbalanced = if balance_coeff > 0 {
                     let unbalance_threshold = UNBALANCE_THRES_PCNT[balance_coeff - 1];
@@ -572,11 +581,19 @@ pub(crate) fn recurse_phase_2<T: ElementData>(
                 .max_by(|&a, &b| variant[a].partial_cmp(&variant[b]).unwrap())
                 .unwrap();
 
+            if bound.length(axis).to_f64() <= params.minimum_size * 2. + 1e-4 {
+                return;
+            }
+
+            let split_min = bound.min()[axis].to_f64() + params.minimum_size;
+            let split_max = bound.max()[axis].to_f64() - params.minimum_size;
+
             let split_at = match params.split_strategy {
                 SplitStrategy::Average => avg[axis],
                 SplitStrategy::SpatialMedian => todo!("Weighted average of distance from center"),
                 SplitStrategy::ClusterMedian => todo!("Weighted average of distance from center"),
-            };
+            }
+            .clamp(split_min, split_max);
 
             let split_at = <T::Vector as Vector>::Num::from_f64(split_at);
 
