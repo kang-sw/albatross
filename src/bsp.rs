@@ -37,11 +37,12 @@ enum TreeNode<T: ElementData> {
 }
 
 #[derive(Clone)]
-struct TreeNodeSplit<T: ElementData> {
-    axis: AxisIndex,
-    value: <T::Vector as Vector>::Num,
-    minus: TreeNodeIndex,
-    plus: TreeNodeIndex,
+#[non_exhaustive]
+pub struct TreeNodeSplit<T: ElementData> {
+    pub axis: AxisIndex,
+    pub value: <T::Vector as Vector>::Num,
+    pub minus: TreeNodeIndex,
+    pub plus: TreeNodeIndex,
 }
 
 #[derive(Clone)]
@@ -111,7 +112,7 @@ impl<T: ElementData> Tree<T> {
     pub fn query_region(
         &self,
         rect: &AabbRect<T::Vector>,
-        on_query_hit: impl FnMut(&Self, TreeNodeIndex),
+        on_query_hit: impl FnMut(TreeNodeIndex),
     ) {
         self.query_region_with_cutter(rect, on_query_hit, |region, axis, value| {
             // Split the region into two parts based on the specified axis and value
@@ -148,14 +149,17 @@ impl<T: ElementData> Tree<T> {
     /// # Panics
     ///
     /// `id` is invalid.
-    pub fn leaf_iter(&self, id: TreeNodeIndex) -> impl Iterator<Item = &TreeElement<T>> {
+    pub fn leaf_iter(
+        &self,
+        id: TreeNodeIndex,
+    ) -> impl Iterator<Item = (ElementIndex, &TreeElement<T>)> {
         struct TreeIter<'a, T: ElementData> {
             tree: &'a Tree<T>,
             elem: ElementIndex,
         }
 
         impl<'a, T: ElementData> Iterator for TreeIter<'a, T> {
-            type Item = &'a TreeElement<T>;
+            type Item = (ElementIndex, &'a TreeElement<T>);
 
             fn next(&mut self) -> Option<Self::Item> {
                 // SAFETY: as long as it exist, the index is always valid.
@@ -168,8 +172,10 @@ impl<T: ElementData> Tree<T> {
                 unsafe {
                     let elem = self.tree.elems.get_unchecked(self.elem);
 
+                    let elem_id = self.elem;
                     self.elem = elem.next;
-                    Some(elem)
+
+                    Some((elem_id, elem))
                 }
             }
         }
@@ -519,7 +525,7 @@ impl<T: ElementData> Tree<T> {
     pub fn query_region_with_cutter(
         &self,
         region: &AabbRect<T::Vector>,
-        on_query_hit: impl FnMut(&Self, TreeNodeIndex),
+        on_query_hit: impl FnMut(TreeNodeIndex),
         cut_minus_plus: impl Fn(
             &AabbRect<T::Vector>,
             AxisIndex,
@@ -538,7 +544,7 @@ impl<T: ElementData> Tree<T> {
         node_index: TreeNodeIndex,
         region: &AabbRect<T::Vector>,
         methods: &mut (
-            impl FnMut(&Tree<T>, TreeNodeIndex),
+            impl FnMut(TreeNodeIndex),
             impl Fn(
                 &AabbRect<T::Vector>,
                 AxisIndex,
@@ -550,7 +556,7 @@ impl<T: ElementData> Tree<T> {
         let split = match &self.nodes[node_index] {
             TreeNode::Split(sp) => sp,
             TreeNode::Leaf(_) => {
-                on_query_hit(self, node_index);
+                on_query_hit(node_index);
                 return;
             }
         };
@@ -799,6 +805,21 @@ fn update_inner_recurse<T: ElementData, F: FnMut(&mut TreeElementEdit<T>)>(
     }
 }
 
+/* ---------------------------------------- Node Visitor ---------------------------------------- */
+
+impl<T: ElementData> Tree<T> {
+    pub fn visit_split_nodes(&self, epoch: TreeNodeIndex, visit: &impl Fn(&TreeNodeSplit<T>)) {
+        match &self.nodes[epoch] {
+            TreeNode::Split(split) => {
+                visit(split);
+                self.visit_split_nodes(split.minus, visit);
+                self.visit_split_nodes(split.plus, visit);
+            }
+            TreeNode::Leaf(_) => {}
+        }
+    }
+}
+
 /* ----------------------------------------- Entity Type ---------------------------------------- */
 
 #[derive(Debug, Clone)]
@@ -876,6 +897,10 @@ impl<'a, T: ElementData> TreeElementEdit<'a, T> {
     fn _get_elem(&self) -> &TreeElement<T> {
         // SAFETY: On creation, element validity is verified
         unsafe { self.tree.elems.get_unchecked(self.elem) }
+    }
+
+    pub fn index(&self) -> ElementIndex {
+        self.elem
     }
 
     pub fn pos(&self) -> &T::Vector {

@@ -4,6 +4,9 @@ description = "Set of algorithms for personal usage."
 version = "0.1.0"
 edition = "2021"
 
+[workspace]
+members = ["examples/bsp-ui"]
+
 [dependencies]
 num = "0.4"
 num-traits = "0.2"

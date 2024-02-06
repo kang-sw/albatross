@@ -46,7 +46,7 @@ fn test() {
 
     bsp.leaf_iter(bsp.root())
         .zip(0..3)
-        .for_each(|(elem, index)| {
+        .for_each(|((_, elem), index)| {
             assert!(elem.index == index);
         });
 

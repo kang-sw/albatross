@@ -268,6 +268,19 @@ impl<V: Vector> AabbRect<V> {
         Self { min: p1, max: p2 }
     }
 
+    /// Build new rectangle from circular components.
+    pub fn new_circular(center: V, radius: V::Num) -> Self {
+        let mut min = center;
+        let mut max = center;
+
+        for i in 0..V::D {
+            min[i] = min[i] - radius;
+            max[i] = max[i] + radius;
+        }
+
+        Self { min, max }
+    }
+
     /// Creates a new `AabbRect` with the given minimum and maximum vectors
     /// without any checks.
     ///
