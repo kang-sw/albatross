@@ -43,6 +43,7 @@ pub enum SplitStrategy {
 
 /// System parameter of BSP
 #[non_exhaustive]
+#[derive(Debug, Clone)]
 pub struct OptimizeParameter {
     /// Defines the minimum number of elements a leaf node must contain before it is
     /// considered for splitting. This threshold helps manage the granularity of spatial
@@ -73,7 +74,7 @@ pub struct OptimizeParameter {
     /// By setting an ideal depth limit, this encourages a more balanced tree structure
     /// by delaying splits and favoring collapses at deeper levels, thereby optimizing
     /// the spatial efficiency and query performance of the BSP tree.
-    pub ideal_depth_limit: u16,
+    pub ideal_depth: u16,
 
     /// Determines the influence of the `ideal_depth_limit` on tree optimization
     /// decisions. This coefficient adjusts how aggressively the tree adheres to the
@@ -83,7 +84,7 @@ pub struct OptimizeParameter {
     /// A higher coefficient increases the effect of the depth limit, promoting a more
     /// compact tree structure by discouraging deep splits and encouraging early
     /// collapses.
-    pub ideal_depth_limit_coeff: ControlIntensity,
+    pub ideal_depth_coeff: ControlIntensity,
 
     /// Sets the maximum depth that can be collapsed in a single update cycle, taking
     /// into account the node's balance and the number of child nodes. This parameter
@@ -94,7 +95,7 @@ pub struct OptimizeParameter {
     /// By limiting the collapse depth, this prevents excessive collapsing that could
     /// destabilize the tree structure, ensuring that rebalancing is both effective and
     /// conservative.
-    pub collapse_depth: u16,
+    pub max_collapse_height: u16,
 
     /// Influences how the balance between different branches of the tree affects
     /// optimization decisions. This coefficient determines the weight of balance
@@ -125,27 +126,43 @@ pub struct OptimizeParameter {
     pub split_strategy: SplitStrategy,
 }
 
-impl Default for OptimizeParameter {
-    fn default() -> Self {
+impl OptimizeParameter {
+    pub fn collapse_all() -> Self {
+        Self::disable_all().with(|x| {
+            x.split_threshold = u32::MAX;
+            x.collapse_threshold = u32::MAX;
+        })
+    }
+
+    pub fn with(mut self, visit: impl FnOnce(&mut Self)) -> Self {
+        visit(&mut self);
+        self
+    }
+
+    pub fn moderate(ideal_depth: u16) -> Self {
         Self {
             split_threshold: 20,
             collapse_threshold: 10,
-            ideal_depth_limit: 20, // Won't be treggiered practically.
-            ideal_depth_limit_coeff: ControlIntensity::Moderate,
-            collapse_depth: 3,
+            ideal_depth,
+            ideal_depth_coeff: ControlIntensity::Moderate,
+            max_collapse_height: 8,
             balance_coeff: ControlIntensity::Moderate,
             node_height_coeff: ControlIntensity::Moderate,
             split_strategy: SplitStrategy::Average,
         }
     }
-}
 
-impl OptimizeParameter {
-    pub fn collapse_all() -> Self {
-        Self::default().tap_mut(|x| {
-            x.split_threshold = u32::MAX;
-            x.collapse_threshold = u32::MAX;
-        })
+    pub fn disable_all() -> Self {
+        Self {
+            split_threshold: u32::MAX,
+            collapse_threshold: 0,
+            ideal_depth: u16::MAX,
+            ideal_depth_coeff: ControlIntensity::Disable,
+            max_collapse_height: u16::MAX,
+            balance_coeff: ControlIntensity::Disable,
+            node_height_coeff: ControlIntensity::Disable,
+            split_strategy: SplitStrategy::Average,
+        }
     }
 }
 
@@ -345,7 +362,7 @@ pub(crate) fn recurse_phase_1<T: ElementData>(
             let params = f!(context.params);
             let collapse = 'collapse: {
                 // Just don't try to do anything if lower depth exceeds allowed maximum
-                if height > params.collapse_depth {
+                if height > params.max_collapse_height {
                     break 'collapse false;
                 }
 
@@ -367,9 +384,9 @@ pub(crate) fn recurse_phase_1<T: ElementData>(
                 unbalanced || {
                     // Increasing threshold coefficient makes
                     let threshold = {
-                        let over_depth = depth.saturating_sub(params.ideal_depth_limit);
+                        let over_depth = depth.saturating_sub(params.ideal_depth);
                         params.collapse_threshold as f32
-                            * OVER_DEPTH_INTENSITY[params.ideal_depth_limit_coeff as usize]
+                            * OVER_DEPTH_INTENSITY[params.ideal_depth_coeff as usize]
                                 .powf(over_depth as _)
                             * HEIGHT_INTENSITY[params.node_height_coeff as usize].powf(height as _)
                     } as usize;
@@ -514,10 +531,10 @@ pub(crate) fn recurse_phase_2<T: ElementData>(
             bound, head, len, ..
         }) => {
             let (tree, on_update, params) = context;
-            let over_depth = depth.saturating_sub(params.ideal_depth_limit);
+            let over_depth = depth.saturating_sub(params.ideal_depth);
             let thres = (params.split_threshold as f32)
                 .tap_mut(|x| {
-                    let index = params.ideal_depth_limit_coeff as usize;
+                    let index = params.ideal_depth_coeff as usize;
                     *x *= OVER_DEPTH_INTENSITY[index].powf(over_depth as f32)
                 })
                 .pipe(|x| x as usize);

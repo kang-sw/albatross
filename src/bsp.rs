@@ -120,8 +120,19 @@ impl<T: ElementData> Tree<T> {
         })
     }
 
+    // TODO: `query_line`
+
+    // TODO: `query_line_thick`
+
     pub fn root(&self) -> TreeNodeIndex {
         self.root
+    }
+
+    pub fn leaf_region(&self, id: TreeNodeIndex) -> &AabbRect<T::Vector> {
+        match &self.nodes[id] {
+            TreeNode::Leaf(leaf) => &leaf.bound,
+            _ => unreachable!(),
+        }
     }
 
     /// # Panics
@@ -182,6 +193,26 @@ impl<T: ElementData> Tree<T> {
         }
     }
 
+    pub fn visit_leaf_nodes(&self, mut insert: impl FnMut(&Tree<T>, TreeNodeIndex)) {
+        fn recurse<T: ElementData>(
+            tree: &Tree<T>,
+            node: TreeNodeIndex,
+            insert: &mut impl FnMut(&Tree<T>, TreeNodeIndex),
+        ) {
+            match unsafe { tree.nodes.get_unchecked(node) } {
+                TreeNode::Split(split) => {
+                    recurse(tree, split.minus, insert);
+                    recurse(tree, split.plus, insert);
+                }
+                TreeNode::Leaf(_) => {
+                    insert(tree, node);
+                }
+            }
+        }
+
+        recurse(self, self.root, &mut insert);
+    }
+
     pub fn insert(&mut self, pos: T::Vector, entity: T) -> ElementIndex {
         // NOTE: To not lookup `elem_pool` again after insertion, we cache position
         // firstly at here.
@@ -224,8 +255,106 @@ impl<T: ElementData> Tree<T> {
             None
         }
     }
+
+    pub fn get_mut_unchecked(&mut self, id: ElementIndex) -> TreeElementEdit<T> {
+        TreeElementEdit::new(self, id)
+    }
+
+    pub fn get_mut_n<const N: usize>(
+        &mut self,
+        keys: [ElementIndex; N],
+    ) -> Option<[&mut TreeElement<T>; N]> {
+        self.elems.get_disjoint_mut(keys)
+    }
+
+    pub fn contains_element(&self, id: ElementIndex) -> bool {
+        self.elems.contains_key(id)
+    }
+
+    /// # Safety
+    ///
+    /// This should only be used if `contains_element(key)` is true for every given
+    /// key and no two keys are equal. Otherwise it is potentially unsafe.
+    pub unsafe fn get_mut_n_unchecked<const N: usize>(
+        &mut self,
+        keys: [ElementIndex; N],
+    ) -> [&mut TreeElement<T>; N] {
+        #[cfg(debug_assertions)]
+        {
+            self.elems.get_disjoint_mut(keys).unwrap()
+        }
+
+        #[cfg(not(debug_assertions))]
+        {
+            self.elems.get_disjoint_unchecked_mut(keys)
+        }
+    }
 }
 
+impl<T: ElementData> std::ops::Index<ElementIndex> for Tree<T> {
+    type Output = TreeElement<T>;
+
+    fn index(&self, index: ElementIndex) -> &Self::Output {
+        &self.elems[index]
+    }
+}
+
+impl<T: ElementData> std::ops::IndexMut<ElementIndex> for Tree<T> {
+    fn index_mut(&mut self, index: ElementIndex) -> &mut Self::Output {
+        &mut self.elems[index]
+    }
+}
+
+/* ---------------------------------------- Verification ---------------------------------------- */
+
+impl<T: ElementData> Tree<T> {
+    /// An API to check internal state. Solely debug purpose; thus do not use this!
+    #[doc(hidden)]
+    pub fn __debug_verify_tree_state(&self) -> Result<(), String> {
+        let mut errors = String::new();
+        let mut leaf_bounds = Vec::new();
+
+        self.visit_leaf_nodes(|_, node| {
+            let leaf = self.nodes[node].as_leaf().unwrap();
+            leaf_bounds.push((node, leaf.bound));
+
+            let count = self.iter_leaf(node).count();
+
+            if count != leaf.len as usize {
+                errors.push_str(&format!(
+                    "Leaf node {:?}.len = {}, mismatches actual count {}\n",
+                    node, leaf.len, count
+                ));
+            }
+
+            let mut prev = Key::null();
+
+            for (number, elem) in self.iter_leaf(node).enumerate() {
+                if elem.owner != node {
+                    errors.push_str(&format!("Leaf {:?}: elem {number} is not owned \n", node));
+                }
+
+                if elem.prev != prev {
+                    errors.push_str(&format!("Leaf {:?}: elem {number} has wrong prev \n", node));
+                }
+
+                prev = elem.next;
+            }
+        });
+
+        for ((n1, c1), (n2, c2)) in leaf_bounds.iter().zip(leaf_bounds.iter().skip(1)) {
+            if c1.intersects(c2) {
+                errors.push_str(&format!("Leaf bounds {:?} and {:?} intersects\n", n1, n2));
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
+    }
+}
 /* ---------------------------------------- Internal APIs --------------------------------------- */
 
 impl<T: ElementData> Tree<T> {
