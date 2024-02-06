@@ -16,25 +16,31 @@ impl TemplateApp {
 impl eframe::App for TemplateApp {
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        ctx.request_repaint();
+
         // Simulate boids
         self.model.tick();
 
-        let resp = egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().show(ctx, |ui| {
             // Render boids / grids
-            self.model.draw(ui, &self.render_opt);
+            let resp = self.model.draw(ui, &self.render_opt);
+
+            if resp.clicked() {
+                let pos = ctx.input(|i| i.pointer.interact_pos().unwrap());
+                let pos = boids::to_world(pos, self.render_opt.offset, self.render_opt.zoom);
+
+                self.model.spawn_boids(self.spawn_count.max(10), pos);
+            }
+            if resp.dragged() {
+                let delta = resp.drag_delta();
+                self.render_opt.offset[0] += delta.x;
+                self.render_opt.offset[1] += delta.y;
+            }
+            if resp.hovered() {
+                let zoom = ctx.input(|i| i.zoom_delta());
+                self.render_opt.zoom *= zoom;
+            }
         });
-
-        if resp.response.clicked() {
-            let pos = ctx.input(|i| i.pointer.interact_pos().unwrap());
-            let pos = boids::to_world(pos, self.render_opt.offset, self.render_opt.zoom);
-
-            self.model.spawn_boids(self.spawn_count.max(10), pos);
-        }
-        if resp.response.dragged() {
-            let delta = resp.response.drag_delta();
-            self.render_opt.offset[0] += delta.x / self.render_opt.zoom;
-            self.render_opt.offset[1] += delta.y / self.render_opt.zoom;
-        }
 
         egui::Window::new("Settings").show(ctx, |ui| {
             egui::CollapsingHeader::new("Boids")
@@ -68,6 +74,7 @@ mod boids {
     use std::collections::VecDeque;
 
     use albatross::{bsp, primitive::AabbRect};
+    use egui::Stroke;
     use nalgebra::Vector2;
     use web_time::Instant;
 
@@ -118,6 +125,7 @@ mod boids {
         pub avg_step_time: f64,
         pub elem_count: usize,
         pub optimize_time: f64,
+        pub verify_time: f64,
     }
 
     impl Default for Model {
@@ -136,7 +144,9 @@ mod boids {
 
                 stat_max_record: 120,
 
-                tree_optimize: bsp::OptimizeParameter::moderate(20),
+                tree_optimize: bsp::OptimizeParameter::moderate(20).with(|x| {
+                    x.collapse_threshold = 0;
+                }),
 
                 stats: Default::default(),
             }
@@ -211,6 +221,14 @@ mod boids {
                         }
                     });
 
+                    if adjacent_kinetics.is_empty() {
+                        continue;
+                    }
+
+                    // If it gets out of the ring; gravity affects
+                    let gravity =
+                        (boid.pos.norm() - self.area_radius).max(0.) * 0.1 * -boid.pos.normalize();
+
                     // Calculate cohesion => Average point of adjacent boids.
                     let avg = adjacent_kinetics
                         .iter()
@@ -233,7 +251,8 @@ mod boids {
                             avg + (boid.pos - kin.pos) * (1. / distance.max(0.0001))
                         });
 
-                    force.acc = cohesion_dir * self.cohesion_force
+                    force.acc = gravity
+                        + cohesion_dir * self.cohesion_force
                         + align_dir * self.align_force
                         + separation_dir * self.separation_force;
                 }
@@ -252,6 +271,11 @@ mod boids {
                 .iter()
             {
                 kin.vel += force.acc * dt as f32;
+
+                if kin.pos.norm() > self.area_radius * 1.5 {
+                    kin.vel = -kin.vel * 0.5;
+                }
+
                 kin.pos += kin.vel * dt as f32;
 
                 self.bsp.get_mut(*tree_key).unwrap().set_pos(kin.pos.into());
@@ -262,9 +286,24 @@ mod boids {
         }
 
         fn refresh_tree(&mut self) {
+            // Compare before / after optimize
+            assert_eq!(
+                self.ecs.len(),
+                self.bsp.__debug_verify_tree_state().unwrap() as u32,
+                "Invalid before optimize"
+            );
+
             let optimize_start = Instant::now();
             self.bsp.optimize(&self.tree_optimize, |_| {});
             self.wr_stat().optimize_time = optimize_start.elapsed().as_secs_f64();
+
+            let verify_start = Instant::now();
+            assert_eq!(
+                self.ecs.len(),
+                self.bsp.__debug_verify_tree_state().unwrap() as u32,
+                "Invalid after optimize"
+            );
+            self.wr_stat().verify_time = verify_start.elapsed().as_secs_f64();
         }
 
         pub fn spawn_boids(&mut self, count: usize, at: [f32; 2]) {
@@ -307,7 +346,7 @@ mod boids {
             Self {
                 offset: Default::default(),
                 zoom: 1.,
-                draw_grid: Default::default(),
+                draw_grid: true,
             }
         }
     }
@@ -325,21 +364,53 @@ mod boids {
                 zoom,
                 draw_grid,
             }: &RenderOption,
-        ) {
-            let (_resp, p) = ui.allocate_painter(ui.available_size(), egui::Sense::hover());
+        ) -> egui::Response {
+            let ui_size = ui.available_size();
+            let (resp, p) = ui.allocate_painter(ui_size, egui::Sense::click_and_drag());
             let offset = *offset;
             let zoom = (*zoom).max(0.001);
 
             if *draw_grid {
-                todo!()
+                self.bsp.visit_leaves(|leaf| {
+                    let bound = self.bsp.leaf_bound(leaf);
+                    let clamp_at = self.area_radius * 1.5;
+                    let min = bound.min().map(|x| x.clamp(-clamp_at, clamp_at));
+                    let max = bound.max().map(|x| x.clamp(-clamp_at, clamp_at));
+
+                    let min = to_screen(min.into(), offset, zoom);
+                    let max = to_screen(max.into(), offset, zoom);
+
+                    p.rect_stroke(
+                        egui::Rect::from_min_max(min.into(), max.into()),
+                        0.0,
+                        Stroke {
+                            width: 1.0,
+                            color: egui::Color32::DARK_GREEN,
+                        },
+                    );
+                });
             }
 
+            // Draw cage
+            p.circle_stroke(
+                to_screen([0., 0.].into(), offset, zoom).into(),
+                self.area_radius * zoom,
+                Stroke {
+                    color: egui::Color32::DARK_GRAY,
+                    width: 1.0,
+                },
+            );
+
+            // Draw boids
             for (_entity, boid) in self.ecs.query::<&BoidKinetic>().iter() {
                 let pos = to_screen(boid.pos, offset, zoom);
                 p.circle_filled(pos.into(), BOID_SIZE * zoom, BOID_COLOR);
 
-                let arrow_dst = boid.pos + boid.vel.normalize() * BOID_ARROW_LEN * zoom;
-                let arrow_dst = to_screen(arrow_dst, offset, zoom);
+                let arrow_dst = boid.pos + boid.vel.normalize() * BOID_ARROW_LEN;
+                let mut arrow_dst = to_screen(arrow_dst, offset, zoom);
+
+                arrow_dst[0] -= pos[0];
+                arrow_dst[1] -= pos[1];
 
                 p.arrow(
                     pos.into(),
@@ -350,6 +421,8 @@ mod boids {
                     },
                 );
             }
+
+            resp
         }
     }
 

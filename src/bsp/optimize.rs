@@ -453,10 +453,6 @@ pub(crate) fn collapse_recursive<T: ElementData>(
         TreeNode::Split(TreeNodeSplit { minus, plus, .. }) => {
             collapse_recursive(context, bounds, root_id, minus);
             collapse_recursive(context, bounds, root_id, plus);
-
-            // Remove itself, as its subnode contents are already merged into root.
-            let _r = f!(context.tree).nodes.remove(node);
-            debug_assert!(_r.is_some());
         }
         TreeNode::Leaf(leaf) => {
             let (tree, on_update, _) = context;
@@ -629,13 +625,13 @@ pub(crate) fn recurse_phase_2<T: ElementData>(
                     subnode.tail = head_id;
                     head.prev = Key::null();
                 } else {
-                    head.prev = subnode.tail;
+                    let prev_tail = subnode.tail;
+                    subnode.tail = head_id;
+                    head.prev = prev_tail;
 
                     unsafe {
-                        tree.elems.get_unchecked_mut(subnode.tail).next = head_id;
+                        tree.elems.get_unchecked_mut(prev_tail).next = head_id;
                     }
-
-                    subnode.tail = head_id;
                 }
             }
 
@@ -682,9 +678,9 @@ pub(crate) fn recurse_phase_2<T: ElementData>(
 
 /* ------------------------------------- Phase 3: Validation ------------------------------------ */
 
-pub(crate) fn recurse_phase_3<T: ElementData>(tree: &mut Tree<T>, node: TreeNodeIndex) {
+pub(crate) fn recurse_phase_3<T: ElementData>(tree: &mut Tree<T>, node_id: TreeNodeIndex) {
     // Simply visit all leaf nodes; then pick one.
-    match tree.nodes[node] {
+    match tree.nodes[node_id] {
         TreeNode::Split(TreeNodeSplit { minus, plus, .. }) => {
             recurse_phase_3(tree, minus);
             recurse_phase_3(tree, plus);
@@ -697,6 +693,7 @@ pub(crate) fn recurse_phase_3<T: ElementData>(tree: &mut Tree<T>, node: TreeNode
                 .elems
                 .get_mut(head_id)
                 .is_some_and(|x| x.owner.is_null());
+
             if !is_changed_node {
                 return;
             }
@@ -706,8 +703,8 @@ pub(crate) fn recurse_phase_3<T: ElementData>(tree: &mut Tree<T>, node: TreeNode
                     let head = tree.elems.get_unchecked_mut(head_id);
                     head_id = head.next;
 
-                    head.owner = node; // We don't care the previous owner value; it's just invalid.
-                    head.data.relocated(node);
+                    head.owner = node_id; // We don't care the previous owner value; it's just invalid.
+                    head.data.relocated(node_id);
                 }
             }
         }

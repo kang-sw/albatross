@@ -90,7 +90,7 @@ impl<T: ElementData> Tree<T> {
         let mut index = self.root; // Starts from root
 
         loop {
-            match self.nodes[index] {
+            match *unsafe { self.nodes.get_unchecked(index) } {
                 TreeNode::Split(TreeNodeSplit {
                     axis,
                     value,
@@ -139,7 +139,7 @@ impl<T: ElementData> Tree<T> {
         self.nodes.get(id).map(|node| node.is_leaf())
     }
 
-    pub fn leaf_region(&self, id: TreeNodeIndex) -> &AabbRect<T::Vector> {
+    pub fn leaf_bound(&self, id: TreeNodeIndex) -> &AabbRect<T::Vector> {
         match &self.nodes[id] {
             TreeNode::Leaf(leaf) => &leaf.bound,
             _ => unreachable!(),
@@ -209,11 +209,11 @@ impl<T: ElementData> Tree<T> {
         }
     }
 
-    pub fn visit_leaves(&self, mut insert: impl FnMut(&Tree<T>, TreeNodeIndex)) {
+    pub fn visit_leaves(&self, mut insert: impl FnMut(TreeNodeIndex)) {
         fn recurse<T: ElementData>(
             tree: &Tree<T>,
             node: TreeNodeIndex,
-            insert: &mut impl FnMut(&Tree<T>, TreeNodeIndex),
+            insert: &mut impl FnMut(TreeNodeIndex),
         ) {
             match unsafe { tree.nodes.get_unchecked(node) } {
                 TreeNode::Split(split) => {
@@ -221,7 +221,7 @@ impl<T: ElementData> Tree<T> {
                     recurse(tree, split.plus, insert);
                 }
                 TreeNode::Leaf(_) => {
-                    insert(tree, node);
+                    insert(node);
                 }
             }
         }
@@ -332,7 +332,7 @@ impl<T: ElementData> Tree<T> {
 
         let mut len_total = 0;
 
-        self.visit_leaves(|_, node| {
+        self.visit_leaves(|node| {
             let leaf = self.nodes[node].as_leaf().unwrap();
             leaf_bounds.push((node, leaf.bound));
 
@@ -430,9 +430,9 @@ impl<T: ElementData> Tree<T> {
     /// `leaf` and `elem_index` both are valid element resides in `self`
     unsafe fn unlink(&mut self, elem_index: ElementIndex) {
         let elem = self.elems.get_unchecked_mut(elem_index);
-        let leaf = elem.owner;
+        let leaf_id = elem.owner;
 
-        debug_assert!(leaf.is_null() == false);
+        debug_assert!(leaf_id.is_null() == false);
         elem.owner = TreeNodeIndex::null();
 
         let elem_prev = elem.prev;
@@ -442,26 +442,22 @@ impl<T: ElementData> Tree<T> {
         elem.prev = ElementIndex::null();
         elem.next = ElementIndex::null();
 
-        let leaf = self.nodes.get_unchecked_mut(leaf).as_leaf_mut().unwrap();
+        let leaf = self.nodes.get_unchecked_mut(leaf_id).as_leaf_mut().unwrap();
 
         // Count is managed manually.
         leaf.len -= 1;
 
         if !elem_prev.is_null() {
-            let prev = elem_prev;
-            let [elem, prev] = self.elems.get_disjoint_unchecked_mut([elem_index, prev]);
-
-            prev.next = elem.next;
+            let prev = self.elems.get_unchecked_mut(elem_prev);
+            prev.next = elem_next;
         } else {
             debug_assert!(leaf.head == elem_index);
             leaf.head = elem_next;
         }
 
         if !elem_next.is_null() {
-            let next = elem_next;
-            let [elem, next] = self.elems.get_disjoint_unchecked_mut([elem_index, next]);
-
-            next.prev = elem.prev;
+            let next = self.elems.get_unchecked_mut(elem_next);
+            next.prev = elem_prev;
         } else {
             debug_assert!(leaf.tail == elem_index);
             leaf.tail = elem_prev;
@@ -935,14 +931,14 @@ impl<T: ElementData> Drop for TreeElementEdit<'_, T> {
             // SAFETY: `self.elem` is valid element resides in valid node.
             unsafe {
                 let elem = self.tree.elems.get_unchecked_mut(self.elem);
-                let owner_index = elem.owner;
+                let owner_id = elem.owner;
 
                 let (elem, owner) = (
                     elem,
                     self.tree
                         .nodes
-                        .get_unchecked(owner_index)
-                        .as_leaf()
+                        .get_unchecked_mut(owner_id)
+                        .as_leaf_mut()
                         .unwrap(),
                 );
 
@@ -951,15 +947,16 @@ impl<T: ElementData> Drop for TreeElementEdit<'_, T> {
                 }
 
                 let pos = elem.pos;
-                let leaf = self.tree.query(&pos);
-
-                debug_assert!(owner_index != leaf);
 
                 // SAFETY: `leaf` and `elem` both are valid.
                 self.tree.unlink(self.elem);
-                self.tree.push_link_back(leaf, self.elem);
 
-                self.tree.elems.get_unchecked_mut(self.elem).relocated(leaf);
+                let leaf_id = self.tree.query(&pos);
+
+                debug_assert!(owner_id != leaf_id);
+
+                self.tree.push_link_back(leaf_id, self.elem);
+                self.tree.get_mut_unchecked(self.elem).relocated(leaf_id);
             };
         }
     }

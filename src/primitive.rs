@@ -382,11 +382,11 @@ impl<V: Vector> AabbRect<V> {
         }
     }
 
-    pub fn split_plus(&mut self, axis: AxisIndex, value: V::Num) {
+    pub fn split_minus(&mut self, axis: AxisIndex, value: V::Num) {
         self.max[axis] = self.min[axis].max_value(value);
     }
 
-    pub fn split_minus(&mut self, axis: AxisIndex, value: V::Num) {
+    pub fn split_plus(&mut self, axis: AxisIndex, value: V::Num) {
         self.min[axis] = self.max[axis].min_value(value);
     }
 }

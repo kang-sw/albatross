@@ -34,7 +34,7 @@ fn test() {
     let id_2 = bsp.insert([-5, 0, 0], new_elem());
 
     assert!(bsp.is_leaf(bsp.root()).unwrap());
-    bsp.visit_leaves(|_, leaf| assert!(leaf == bsp.root()));
+    bsp.visit_leaves(|leaf| assert!(leaf == bsp.root()));
 
     let id_3 = bsp.insert([-5, 1, 0], new_elem());
 
@@ -79,7 +79,7 @@ fn test() {
     assert!(bsp.leaf_len(new_minus) == 2);
     assert!(bsp.leaf_len(new_plus) == 1);
 
-    bsp.visit_leaves(|_, leaf| {
+    bsp.visit_leaves(|leaf| {
         assert!(leaf == new_minus || leaf == new_plus);
     });
 
@@ -101,7 +101,7 @@ fn test() {
     assert!(bsp.is_leaf(new_minus).is_none());
     assert!(bsp.is_leaf(new_plus).is_none());
 
-    bsp.visit_leaves(|_, leaf| assert!(leaf == root));
+    bsp.visit_leaves(|leaf| assert!(leaf == root));
 
     bsp.__debug_verify_tree_state()
         .map_err(|x| println!("{}", x))
