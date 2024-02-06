@@ -19,7 +19,7 @@ use crate::ControlIntensity;
 
 #[non_exhaustive]
 #[derive(Clone, Debug)]
-pub enum SplitAlgorithm {
+pub enum SplitStrategy {
     /// Selects the central point of a dataset as the split point by calculating the
     /// average position of all points. This method aims to divide the dataset around a
     /// central value, providing a straightforward and intuitive splitting strategy.
@@ -123,7 +123,7 @@ pub struct OptimizeParameter {
     /// into two child nodes. This parameter influences the method used to determine the
     /// optimal split point, affecting the spatial distribution of elements within the    
     /// tree and the efficiency of spatial queries.
-    pub split_algorithm: SplitAlgorithm,
+    pub split_strategy: SplitStrategy,
 }
 
 impl Default for OptimizeParameter {
@@ -136,7 +136,7 @@ impl Default for OptimizeParameter {
             collapse_depth: 3,
             balance_coeff: ControlIntensity::Moderate,
             node_height_coeff: ControlIntensity::Moderate,
-            split_algorithm: SplitAlgorithm::Average,
+            split_strategy: SplitStrategy::Average,
         }
     }
 }
@@ -295,7 +295,7 @@ impl<T: ElementData> Tree<T> {
         let root = self.root;
         recurse_phase_1(&mut (self, &mut on_update, params), 0, root);
 
-        return todo!();
+        todo!()
     }
 }
 
@@ -513,20 +513,24 @@ pub(crate) fn recurse_phase_2<T: ElementData>(
             tail,
             len,
         }) => {
-            let over_depth = depth.saturating_sub(f!(context.params).ideal_depth_limit);
-            let thres = (f!(context.params).split_threshold as f32)
+            let (tree, on_update, params) = context;
+            let over_depth = depth.saturating_sub(params.ideal_depth_limit);
+            let thres = (params.split_threshold as f32)
                 .tap_mut(|x| {
-                    *x *= OVER_DEPTH_INTENSITY[f!(context.params).ideal_depth_limit_coeff as usize]
-                        .powf(over_depth as f32)
+                    let index = params.ideal_depth_limit_coeff as usize;
+                    *x *= OVER_DEPTH_INTENSITY[index].powf(over_depth as f32)
                 })
                 .pipe(|x| x as usize);
 
             if (len as usize) < thres {
-                // Just let it be.
                 return;
             }
 
-            // Actual split operation.
+            // # Calculate split point
+            // 1. Average
+            // 2. StdVar per axes
+            // 3. a. Spatial Median
+            // 3. b. Cluster Median
         }
     }
 }
