@@ -166,12 +166,20 @@ impl<T: ElementData> Tree<T> {
     /// If one iterating tree node indexes that was hit by query, relocation can move the
     /// element into the node that not visited yet, which makes the iteration on same
     /// element occur more than once.
-    pub fn visit_leaf_mut<'a>(
-        &'a mut self,
+    pub fn visit_leaf_mut(
+        &mut self,
         id: TreeNodeIndex,
-        visit: impl FnMut(&mut TreeElementEdit<T>),
+        mut visit: impl FnMut(&mut TreeElementEdit<T>),
     ) {
-        todo!()
+        let mut elem_id = self.nodes[id].as_leaf_mut().unwrap().head;
+
+        while elem_id.is_null() == false {
+            let elem = &mut self.elems[elem_id];
+            elem_id = elem.next;
+
+            let mut edit = TreeElementEdit::new(self, elem_id);
+            visit(&mut edit);
+        }
     }
 
     pub fn insert(&mut self, pos: T::Vector, entity: T) -> ElementIndex {

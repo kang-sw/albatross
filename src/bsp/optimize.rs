@@ -291,6 +291,7 @@ impl<T: ElementData> Tree<T> {
         let context = &mut (self, &mut on_update, params);
         recurse_phase_1(context, 0, root);
         recurse_phase_2(context, 0, root);
+        recurse_phase_3(context.0, root);
     }
 }
 
@@ -660,4 +661,38 @@ pub(crate) fn recurse_phase_2<T: ElementData>(
 
     recurse_phase_1(context, depth + 1, minus);
     recurse_phase_1(context, depth + 1, plus);
+}
+
+/* ------------------------------------- Phase 3: Validation ------------------------------------ */
+
+pub(crate) fn recurse_phase_3<T: ElementData>(tree: &mut Tree<T>, node: TreeNodeIndex) {
+    // Simply visit all leaf nodes; then pick one.
+    match tree.nodes[node] {
+        TreeNode::Split(TreeNodeSplit { minus, plus, .. }) => {
+            recurse_phase_3(tree, minus);
+            recurse_phase_3(tree, plus);
+        }
+        TreeNode::Leaf(TreeNodeLeaf {
+            head: mut head_id, ..
+        }) => {
+            // If head is null, every element of this node has empty owner for sure.
+            let is_changed_node = tree
+                .elems
+                .get_mut(head_id)
+                .is_some_and(|x| x.owner.is_null());
+            if !is_changed_node {
+                return;
+            }
+
+            while head_id.is_null() == false {
+                unsafe {
+                    let head = tree.elems.get_unchecked_mut(head_id);
+                    head_id = head.next;
+
+                    head.owner = node; // We don't care the previous owner value; it's just invalid.
+                    head.data.relocated(node);
+                }
+            }
+        }
+    }
 }
