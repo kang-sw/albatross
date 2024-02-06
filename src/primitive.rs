@@ -68,12 +68,14 @@ trait_alias!(
         + Mul<Output = Self>
         + Sub<Output = Self>
         + Div<Output = Self>
-        + NumMinMax
+        + NumberCommon
 );
 
-pub trait NumMinMax {
+pub trait NumberCommon {
     const MINVALUE: Self;
     const MAXVALUE: Self;
+
+    fn to_f64(&self) -> f64;
 }
 
 pub trait Vector:
@@ -83,6 +85,7 @@ pub trait Vector:
     const D: AxisIndex;
 
     fn zero() -> Self;
+    fn zero_f64() -> impl Vector<Num = f64>;
     fn get(&self, i: AxisIndex) -> Self::Num;
     fn get_mut(&mut self, i: AxisIndex) -> &mut Self::Num;
     fn set(&mut self, i: AxisIndex, value: Self::Num);
@@ -158,6 +161,10 @@ impl<T: Number, const D: usize> Vector for [T; D] {
         [T::zero(); D]
     }
 
+    fn zero_f64() -> impl Vector<Num = f64> {
+        [0.0; D]
+    }
+
     fn get(&self, i: AxisIndex) -> Self::Num {
         self[i]
     }
@@ -173,14 +180,18 @@ impl<T: Number, const D: usize> Vector for [T; D] {
 
 #[doc(hidden)]
 mod _impl_fixed {
-    use super::NumMinMax;
+    use super::NumberCommon;
     use fixed::*;
 
     macro_rules! define_minmax {
     ($($ty:ty), *) => {
-        $(impl NumMinMax for $ty {
+        $(impl NumberCommon for $ty {
             const MINVALUE: Self = Self::MIN;
             const MAXVALUE: Self = Self::MAX;
+
+            fn to_f64(&self) -> f64 {
+                *self as f64
+            }
         })*
     };
 }
@@ -188,17 +199,27 @@ mod _impl_fixed {
     define_minmax!(i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize, f32, f64);
 
     macro_rules! define_minmax_fixed {
-    ($($ty:ty), *) => {
-        $(impl<T> NumMinMax for $ty  {
-            const MINVALUE: Self = Self::MIN;
-            const MAXVALUE: Self = Self::MAX;
-        })*
-    };
-}
-    define_minmax_fixed!(FixedI8<T>, FixedI16<T>, FixedI32<T>, FixedI64<T>);
-    define_minmax_fixed!(FixedU8<T>, FixedU16<T>, FixedU32<T>, FixedU64<T>);
+        ($ty:ident <$t:ident>, $tr:ident) => {
+            impl<$t: fixed::types::extra::$tr> NumberCommon for $ty<$t> {
+                const MINVALUE: Self = Self::MIN;
+                const MAXVALUE: Self = Self::MAX;
 
-    define_minmax_fixed!(FixedI128<T>, FixedU128<T>);
+                fn to_f64(&self) -> f64 {
+                    (*self).to_num()
+                }
+            }
+        };
+    }
+    define_minmax_fixed!(FixedI8<T>, LeEqU8);
+    define_minmax_fixed!(FixedU8<T>, LeEqU8);
+    define_minmax_fixed!(FixedI16<T>, LeEqU16);
+    define_minmax_fixed!(FixedU16<T>, LeEqU16);
+    define_minmax_fixed!(FixedI32<T>, LeEqU32);
+    define_minmax_fixed!(FixedU32<T>, LeEqU32);
+    define_minmax_fixed!(FixedI64<T>, LeEqU64);
+    define_minmax_fixed!(FixedU64<T>, LeEqU64);
+    define_minmax_fixed!(FixedI128<T>, LeEqU128);
+    define_minmax_fixed!(FixedU128<T>, LeEqU128);
 }
 
 /* ---------------------------------------------------------------------------------------------- */

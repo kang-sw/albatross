@@ -16,3 +16,5 @@ thiserror = "1"
 
 derive_more = "0.99"
 enum-as-inner = "0.6"
+
+typenum = "1"
