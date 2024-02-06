@@ -139,11 +139,11 @@ impl OptimizeParameter {
         self
     }
 
-    pub fn moderate(ideal_depth: u16) -> Self {
+    pub fn moderate(split_count: u32) -> Self {
         Self {
-            split_threshold: 20,
-            collapse_threshold: 10,
-            ideal_depth,
+            split_threshold: split_count,
+            collapse_threshold: split_count / 2,
+            ideal_depth: 8,
             ideal_depth_coeff: ControlIntensity::Moderate,
             max_collapse_height: 8,
             balance_coeff: ControlIntensity::Moderate,
@@ -392,7 +392,7 @@ pub(crate) fn recurse_phase_1<T: ElementData>(
                     } as usize;
 
                     // Increment collapse threshold
-                    total < threshold
+                    total <= threshold
                 }
             };
 

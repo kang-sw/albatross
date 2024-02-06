@@ -337,16 +337,23 @@ impl<T: ElementData> Tree<T> {
 
             let mut prev = Key::null();
 
-            for (number, elem) in self.leaf_iter(node).enumerate() {
+            let mut number = 0;
+            let mut head_id = leaf.head;
+            while let Some(elem) = self.get(head_id) {
                 if elem.owner != node {
                     errors.push_str(&format!("Leaf {:?}: elem {number} is not owned \n", node));
                 }
 
                 if elem.prev != prev {
-                    errors.push_str(&format!("Leaf {:?}: elem {number} has wrong prev \n", node));
+                    errors.push_str(&format!(
+                        "Leaf {:?}: elem {number} has wrong prev, desired: {:?}, actual: {:?} \n",
+                        node, prev, elem.prev
+                    ));
                 }
 
-                prev = elem.next;
+                number += 1;
+                prev = head_id;
+                head_id = elem.next;
             }
         });
 
@@ -398,7 +405,7 @@ impl<T: ElementData> Tree<T> {
             let [elem, prev_tail] = self.elems.get_disjoint_unchecked_mut([elem_index, tail]);
 
             prev_tail.next = elem_index;
-            elem.prev = elem_index;
+            elem.prev = tail;
         }
     }
 
