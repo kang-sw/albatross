@@ -2,7 +2,8 @@
 pub struct TemplateApp {
     // Example stuff:
     model: boids::Model,
-    render_bsp: bool,
+    render_opt: boids::RenderOption,
+    spawn_count: usize,
 }
 
 impl TemplateApp {
@@ -18,9 +19,22 @@ impl eframe::App for TemplateApp {
         // Simulate boids
         self.model.tick();
 
-        egui::CentralPanel::default().show(ctx, |ui| {
+        let resp = egui::CentralPanel::default().show(ctx, |ui| {
             // Render boids / grids
+            self.model.draw(ui, &self.render_opt);
         });
+
+        if resp.response.clicked() {
+            let pos = ctx.input(|i| i.pointer.interact_pos().unwrap());
+            let pos = boids::to_world(pos, self.render_opt.offset, self.render_opt.zoom);
+
+            self.model.spawn_boids(self.spawn_count.max(10), pos);
+        }
+        if resp.response.dragged() {
+            let delta = resp.response.drag_delta();
+            self.render_opt.offset[0] += delta.x / self.render_opt.zoom;
+            self.render_opt.offset[1] += delta.y / self.render_opt.zoom;
+        }
 
         egui::Window::new("Settings").show(ctx, |ui| {
             egui::CollapsingHeader::new("Boids")
@@ -211,7 +225,7 @@ mod boids {
                         .fold(Vector2::zeros(), |avg, (kin, ..)| avg + kin.vel)
                         / adjacent_kinetics.len() as f32;
 
-                    // Calculate separation =>
+                    // Calculate separation => Pushing force from adjacent boids
                     let separation_dir = adjacent_kinetics
                         .iter()
                         .filter(|(_, distance)| *distance < self.near_radius)
@@ -282,9 +296,71 @@ mod boids {
 
     /* ---------------------------------------- Rendering --------------------------------------- */
 
-    struct RenderOption {}
+    pub struct RenderOption {
+        pub offset: [f32; 2],
+        pub zoom: f32,
+        pub draw_grid: bool,
+    }
+
+    impl Default for RenderOption {
+        fn default() -> Self {
+            Self {
+                offset: Default::default(),
+                zoom: 1.,
+                draw_grid: Default::default(),
+            }
+        }
+    }
+
+    const BOID_SIZE: f32 = 0.2;
+    const BOID_ARROW_LEN: f32 = 0.5;
+    const BOID_COLOR: egui::Color32 = egui::Color32::WHITE;
 
     impl Model {
-        pub fn draw(&self, ui: &mut egui::Ui, offset: [f32; 2], zoom: f32) {}
+        pub fn draw(
+            &self,
+            ui: &mut egui::Ui,
+            RenderOption {
+                offset,
+                zoom,
+                draw_grid,
+            }: &RenderOption,
+        ) {
+            let (_resp, p) = ui.allocate_painter(ui.available_size(), egui::Sense::hover());
+            let offset = *offset;
+            let zoom = (*zoom).max(0.001);
+
+            if *draw_grid {
+                todo!()
+            }
+
+            for (_entity, boid) in self.ecs.query::<&BoidKinetic>().iter() {
+                let pos = to_screen(boid.pos, offset, zoom);
+                p.circle_filled(pos.into(), BOID_SIZE * zoom, BOID_COLOR);
+
+                let arrow_dst = boid.pos + boid.vel.normalize() * BOID_ARROW_LEN * zoom;
+                let arrow_dst = to_screen(arrow_dst, offset, zoom);
+
+                p.arrow(
+                    pos.into(),
+                    arrow_dst.into(),
+                    egui::Stroke {
+                        width: 1.0,
+                        color: BOID_COLOR,
+                    },
+                );
+            }
+        }
+    }
+
+    pub fn to_world(screen: egui::Pos2, offset: [f32; 2], zoom: f32) -> [f32; 2] {
+        [
+            (screen[0] - offset[0]) / zoom,
+            (screen[1] - offset[1]) / zoom,
+        ]
+    }
+
+    pub fn to_screen(world: Vector2<f32>, offset: [f32; 2], zoom: f32) -> [f32; 2] {
+        [world[0] * zoom + offset[0], world[1] * zoom + offset[1]]
     }
 }
