@@ -21,6 +21,8 @@ pub trait ElementData {
 }
 
 /// A BSP tree implementation. Hard limit of tree depth is 65,535.
+///
+/// Each leaf node can contain 2^31-1 elements. (MSB is reserved)
 #[derive(Clone)]
 pub struct Tree<T: ElementData> {
     nodes: SlotMap<TreeNodeIndex, TreeNode<T>>,
@@ -318,15 +320,18 @@ impl<T: ElementData> std::ops::IndexMut<ElementIndex> for Tree<T> {
 impl<T: ElementData> Tree<T> {
     /// An API to check internal state. Solely debug purpose; thus do not use this!
     #[doc(hidden)]
-    pub fn __debug_verify_tree_state(&self) -> Result<(), String> {
+    pub fn __debug_verify_tree_state(&self) -> Result<usize, String> {
         let mut errors = String::new();
         let mut leaf_bounds = Vec::new();
+
+        let mut len_total = 0;
 
         self.visit_leaves(|_, node| {
             let leaf = self.nodes[node].as_leaf().unwrap();
             leaf_bounds.push((node, leaf.bound));
 
             let count = self.leaf_iter(node).count();
+            len_total += count;
 
             if count != leaf.len as usize {
                 errors.push_str(&format!(
@@ -364,7 +369,7 @@ impl<T: ElementData> Tree<T> {
         }
 
         if errors.is_empty() {
-            Ok(())
+            Ok(len_total)
         } else {
             Err(errors)
         }
@@ -631,9 +636,82 @@ impl<T: ElementData> Tree<T> {
         // Phase 1: Recursive element update
         update_inner_recurse(&mut context, root);
 
-        // Phase 2: Insert all floating elements.
-        let mut relocate = context.2;
+        // Phase 2: Consume all relocations
+        context.0.impl_consume_relocation(context.2);
+    }
 
+    /// Update given disjoint leaves. It is useful when evaluating region query result,
+    /// while preventing duplicated evaluation(update) of entity which is moved into a
+    /// node that wasn't evaluated yet.
+    pub fn update_disjoint_leaves(
+        &mut self,
+        nodes: impl Iterator<Item = TreeNodeIndex> + Clone,
+        updator: impl FnMut(&mut TreeElementEdit<T>),
+    ) {
+        let all_disjoint = 'finish: {
+            for node_id in nodes.clone() {
+                let Some(node) = self.nodes.get_mut(node_id).and_then(|x| x.as_leaf_mut()) else {
+                    break 'finish false;
+                };
+
+                if node.len & 0x8000_0000 != 0 {
+                    break 'finish false;
+                }
+
+                node.len |= 0x8000_0000;
+            }
+
+            true
+        };
+
+        if all_disjoint {
+            for node_id in nodes.clone() {
+                // SAFETY: All nodes are proven valid.
+                unsafe {
+                    self.nodes
+                        .get_unchecked_mut(node_id)
+                        .as_leaf_mut()
+                        .unwrap()
+                        .len &= 0x7FFF_FFFF;
+                }
+            }
+
+            // SAFETY: We've just checked if it's safe to do so.
+            unsafe { self.update_disjoint_leaves_unchecked(nodes, updator) }
+        } else {
+            for node_id in nodes {
+                let Some(node) = self.nodes.get_mut(node_id).and_then(|x| x.as_leaf_mut()) else {
+                    break;
+                };
+
+                node.len &= 0x7FFF_FFFF;
+            }
+        }
+    }
+
+    /// Update given disjoint leaves. It is useful when evaluating region query result,
+    /// while preventing duplicated evaluation(update) of entity which is moved into a
+    /// node that wasn't evaluated yet.
+    ///
+    /// # Safety
+    ///
+    /// This should only be used if `contains_element(key)` is true for every given
+    /// key and no two keys are equal. Otherwise it is potentially unsafe.    
+    pub unsafe fn update_disjoint_leaves_unchecked(
+        &mut self,
+        nodes: impl Iterator<Item = TreeNodeIndex>,
+        mut updator: impl FnMut(&mut TreeElementEdit<T>),
+    ) {
+        let mut ctx = (&mut *self, &mut updator, Key::null());
+
+        for node_id in nodes {
+            update_inner_recurse(&mut ctx, node_id);
+        }
+
+        ctx.0.impl_consume_relocation(ctx.2);
+    }
+
+    fn impl_consume_relocation(&mut self, mut relocate: ElementIndex) {
         while !relocate.is_null() {
             let elem = &mut self.elems[relocate];
             let elem_index = relocate;
@@ -651,17 +729,6 @@ impl<T: ElementData> Tree<T> {
                 self.elems.get_unchecked_mut(elem_index).relocated(leaf);
             };
         }
-    }
-
-    /// Update given disjoint leaves. It is useful when evaluating region query result,
-    /// while preventing duplicated evaluation(update) of entity which is moved into a
-    /// node that wasn't evaluated yet.
-    pub fn update_disjoint_leaves(
-        &mut self,
-        nodes: impl IntoIterator<Item = TreeNodeIndex>,
-        mut updator: impl FnMut(&mut TreeElementEdit<T>),
-    ) {
-        todo!()
     }
 }
 
