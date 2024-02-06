@@ -643,11 +643,13 @@ impl<T: ElementData> Tree<T> {
     /// Update given disjoint leaves. It is useful when evaluating region query result,
     /// while preventing duplicated evaluation(update) of entity which is moved into a
     /// node that wasn't evaluated yet.
-    pub fn update_disjoint_leaves(
+    pub fn update_disjoint_leaves<I: Iterator<Item = TreeNodeIndex> + Clone>(
         &mut self,
-        nodes: impl Iterator<Item = TreeNodeIndex> + Clone,
+        nodes: impl IntoIterator<IntoIter = I> + Clone,
         updator: impl FnMut(&mut TreeElementEdit<T>),
     ) {
+        let nodes = nodes.into_iter();
+
         let all_disjoint = 'finish: {
             for node_id in nodes.clone() {
                 let Some(node) = self.nodes.get_mut(node_id).and_then(|x| x.as_leaf_mut()) else {
@@ -699,7 +701,7 @@ impl<T: ElementData> Tree<T> {
     /// key and no two keys are equal. Otherwise it is potentially unsafe.    
     pub unsafe fn update_disjoint_leaves_unchecked(
         &mut self,
-        nodes: impl Iterator<Item = TreeNodeIndex>,
+        nodes: impl IntoIterator<Item = TreeNodeIndex>,
         mut updator: impl FnMut(&mut TreeElementEdit<T>),
     ) {
         let mut ctx = (&mut *self, &mut updator, Key::null());
