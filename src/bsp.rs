@@ -128,6 +128,14 @@ impl<T: ElementData> Tree<T> {
         self.root
     }
 
+    pub fn leaf_len(&self, id: TreeNodeIndex) -> u32 {
+        self.nodes[id].as_leaf().unwrap().len
+    }
+
+    pub fn is_leaf(&self, id: TreeNodeIndex) -> Option<bool> {
+        self.nodes.get(id).map(|node| node.is_leaf())
+    }
+
     pub fn leaf_region(&self, id: TreeNodeIndex) -> &AabbRect<T::Vector> {
         match &self.nodes[id] {
             TreeNode::Leaf(leaf) => &leaf.bound,
@@ -138,7 +146,7 @@ impl<T: ElementData> Tree<T> {
     /// # Panics
     ///
     /// `id` is invalid.
-    pub fn iter_leaf(&self, id: TreeNodeIndex) -> impl Iterator<Item = &TreeElement<T>> {
+    pub fn leaf_iter(&self, id: TreeNodeIndex) -> impl Iterator<Item = &TreeElement<T>> {
         struct TreeIter<'a, T: ElementData> {
             tree: &'a Tree<T>,
             elem: ElementIndex,
@@ -177,7 +185,7 @@ impl<T: ElementData> Tree<T> {
     /// If one iterating tree node indexes that was hit by query, relocation can move the
     /// element into the node that not visited yet, which makes the iteration on same
     /// element occur more than once.
-    pub fn visit_leaf_mut(
+    pub fn leaf_for_each_mut(
         &mut self,
         id: TreeNodeIndex,
         mut visit: impl FnMut(&mut TreeElementEdit<T>),
@@ -193,7 +201,7 @@ impl<T: ElementData> Tree<T> {
         }
     }
 
-    pub fn visit_leaf_nodes(&self, mut insert: impl FnMut(&Tree<T>, TreeNodeIndex)) {
+    pub fn visit_leaves(&self, mut insert: impl FnMut(&Tree<T>, TreeNodeIndex)) {
         fn recurse<T: ElementData>(
             tree: &Tree<T>,
             node: TreeNodeIndex,
@@ -314,11 +322,11 @@ impl<T: ElementData> Tree<T> {
         let mut errors = String::new();
         let mut leaf_bounds = Vec::new();
 
-        self.visit_leaf_nodes(|_, node| {
+        self.visit_leaves(|_, node| {
             let leaf = self.nodes[node].as_leaf().unwrap();
             leaf_bounds.push((node, leaf.bound));
 
-            let count = self.iter_leaf(node).count();
+            let count = self.leaf_iter(node).count();
 
             if count != leaf.len as usize {
                 errors.push_str(&format!(
@@ -329,7 +337,7 @@ impl<T: ElementData> Tree<T> {
 
             let mut prev = Key::null();
 
-            for (number, elem) in self.iter_leaf(node).enumerate() {
+            for (number, elem) in self.leaf_iter(node).enumerate() {
                 if elem.owner != node {
                     errors.push_str(&format!("Leaf {:?}: elem {number} is not owned \n", node));
                 }
@@ -510,54 +518,54 @@ impl<T: ElementData> Tree<T> {
         let mut param_pack = (on_query_hit, cut_minus_plus);
 
         // Enter recursive routine
-        recurse(self, self.root, region, &mut param_pack);
+        self.impl_query_region_with_cutter(self.root, region, &mut param_pack);
+    }
 
-        fn recurse<T: ElementData>(
-            tree: &Tree<T>,
-            node_index: TreeNodeIndex,
-            region: &AabbRect<T::Vector>,
-            methods: &mut (
-                impl FnMut(&Tree<T>, TreeNodeIndex),
-                impl Fn(
-                    &AabbRect<T::Vector>,
-                    AxisIndex,
-                    <T::Vector as Vector>::Num,
-                ) -> [AabbRect<T::Vector>; 2],
-            ),
-        ) {
-            let (on_query_hit, cut_m_p) = methods;
-            let split = match &tree.nodes[node_index] {
-                TreeNode::Split(sp) => sp,
-                TreeNode::Leaf(_) => {
-                    on_query_hit(tree, node_index);
-                    return;
-                }
-            };
+    fn impl_query_region_with_cutter(
+        &self,
+        node_index: TreeNodeIndex,
+        region: &AabbRect<T::Vector>,
+        methods: &mut (
+            impl FnMut(&Tree<T>, TreeNodeIndex),
+            impl Fn(
+                &AabbRect<T::Vector>,
+                AxisIndex,
+                <T::Vector as Vector>::Num,
+            ) -> [AabbRect<T::Vector>; 2],
+        ),
+    ) {
+        let (on_query_hit, cut_m_p) = methods;
+        let split = match &self.nodes[node_index] {
+            TreeNode::Split(sp) => sp,
+            TreeNode::Leaf(_) => {
+                on_query_hit(self, node_index);
+                return;
+            }
+        };
 
-            let (over_min, under_max) = {
-                let axis_min = region.min()[split.axis];
-                let axis_max = region.max()[split.axis];
+        let (over_min, under_max) = {
+            let axis_min = region.min()[split.axis];
+            let axis_max = region.max()[split.axis];
 
-                (axis_min <= split.value, split.value < axis_max)
-            };
+            (axis_min <= split.value, split.value < axis_max)
+        };
 
-            match (over_min, under_max) {
-                (true, true) => {
-                    // Only apply cutting if the split crosses the hyperplane.
-                    let [minus, plus] = cut_m_p(region, split.axis, split.value);
+        match (over_min, under_max) {
+            (true, true) => {
+                // Only apply cutting if the split crosses the hyperplane.
+                let [minus, plus] = cut_m_p(region, split.axis, split.value);
 
-                    recurse(tree, split.minus, &minus, methods);
-                    recurse(tree, split.plus, &plus, methods);
-                }
-                (false, true) => {
-                    recurse(tree, split.plus, region, methods);
-                }
-                (true, false) => {
-                    recurse(tree, split.minus, region, methods);
-                }
-                (false, false) => {
-                    unreachable!()
-                }
+                self.impl_query_region_with_cutter(split.minus, &minus, methods);
+                self.impl_query_region_with_cutter(split.plus, &plus, methods);
+            }
+            (false, true) => {
+                self.impl_query_region_with_cutter(split.plus, region, methods);
+            }
+            (true, false) => {
+                self.impl_query_region_with_cutter(split.minus, region, methods);
+            }
+            (false, false) => {
+                unreachable!()
             }
         }
     }
@@ -636,6 +644,17 @@ impl<T: ElementData> Tree<T> {
                 self.elems.get_unchecked_mut(elem_index).relocated(leaf);
             };
         }
+    }
+
+    /// Update given disjoint leaves. It is useful when evaluating region query result,
+    /// while preventing duplicated evaluation(update) of entity which is moved into a
+    /// node that wasn't evaluated yet.
+    pub fn update_disjoint_leaves(
+        &mut self,
+        nodes: impl IntoIterator<Item = TreeNodeIndex>,
+        mut updator: impl FnMut(&mut TreeElementEdit<T>),
+    ) {
+        todo!()
     }
 }
 

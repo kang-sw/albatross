@@ -551,7 +551,7 @@ pub(crate) fn recurse_phase_2<T: ElementData>(
             // 3. b. Cluster Median
 
             let mut avg = tree
-                .iter_leaf(node)
+                .leaf_iter(node)
                 .fold(T::Vector::zero_f64(), |mut val, elem| {
                     for i in 0..T::Vector::D {
                         val[i] += elem.pos[i].to_f64();
@@ -564,7 +564,7 @@ pub(crate) fn recurse_phase_2<T: ElementData>(
             }
 
             let variant = tree
-                .iter_leaf(node)
+                .leaf_iter(node)
                 .fold(T::Vector::zero_f64(), |mut val, elem| {
                     for i in 0..T::Vector::D {
                         val[i] += (elem.pos[i].to_f64() - avg[i]).powi(2);
