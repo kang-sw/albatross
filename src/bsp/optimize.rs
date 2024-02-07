@@ -612,7 +612,7 @@ pub(crate) fn recurse_phase_2<T: Element>(
 
                 for i in 0..T::Vector::D {
                     if params.square_split_axes.get(i) {
-                        variant[i] *= bound_lengths[i] / shortest_border;
+                        variant[i] *= (bound_lengths[i] / shortest_border).powi(2);
                     }
                 }
             }
