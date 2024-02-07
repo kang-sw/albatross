@@ -61,13 +61,12 @@ pub struct Model {
 
 #[derive(Default)]
 pub struct Stats {
-    pub tick_time: f64,
-    pub avg_query_time: f64,
-    pub avg_proc_time: f64,
-    pub avg_step_time: f64,
+    pub tick: f64,
+    pub avg_query: f64,
+    pub avg_step: f64,
     pub elem_count: usize,
-    pub optimize_time: f64,
-    pub verify_time: f64,
+    pub optimize: f64,
+    pub verify: f64,
 }
 
 impl Default for Model {
@@ -84,13 +83,13 @@ impl Default for Model {
             near_radius: 0.5,
             cohesion_force: 9.,
             align_force: 0.25,
-            separation_force: 9.,
+            separation_force: 35.,
             max_speed: 10.,
-            predator_avoidance: 25.,
+            predator_avoidance: 150.,
 
             stat_max_record: 120,
             tree_optimize: bsp::OptimizeParameter::moderate(4).with(|x| {
-                x.minimum_size = 1.;
+                x.minimum_size = 2.;
                 x.ideal_depth = u16::MAX;
                 x.balance_coeff = ControlIntensity::Moderate;
                 x.max_collapse_height = u16::MAX;
@@ -127,13 +126,12 @@ impl Model {
         self.step(dt as _);
         self.refresh_tree();
 
-        self.wr_stat().tick_time = start_time.elapsed().as_secs_f64();
+        self.wr_stat().tick = start_time.elapsed().as_secs_f64();
     }
 
     fn calc_force(&mut self) {
         let start_time;
         let mut query_count;
-        let mut query_time = 0.;
         let mut removed_entities = BTreeSet::new();
 
         {
@@ -156,9 +154,6 @@ impl Model {
 
                 adjacent_kinetics.clear();
                 predator_kinetics.clear();
-
-                // Query all nearby boids
-                let query_start = Instant::now();
 
                 self.bsp.query_region(&region, |tree| {
                     for (elem_id, elem) in self.bsp.leaf_iter(tree) {
@@ -188,7 +183,6 @@ impl Model {
                     }
                 });
 
-                query_time += query_start.elapsed().as_secs_f64();
                 if adjacent_kinetics.is_empty() {
                     force.acc = Default::default();
                     continue;
@@ -259,8 +253,7 @@ impl Model {
             self.ecs.despawn(entity).unwrap();
         }
 
-        self.wr_stat().avg_query_time = query_time / query_count as f64;
-        self.wr_stat().avg_proc_time = start_time.elapsed().as_secs_f64() / query_count as f64;
+        self.wr_stat().avg_query = start_time.elapsed().as_secs_f64() / query_count as f64;
         self.wr_stat().elem_count = query_count;
     }
 
@@ -317,7 +310,7 @@ impl Model {
             self.bsp.get_mut(*tree_key).unwrap().set_pos(kin.pos.into());
         }
 
-        self.wr_stat().avg_step_time = step_start.elapsed().as_secs_f64() / self.ecs.len() as f64;
+        self.wr_stat().avg_step = step_start.elapsed().as_secs_f64() / self.ecs.len() as f64;
     }
 
     fn refresh_tree(&mut self) {
@@ -330,7 +323,7 @@ impl Model {
 
         let optimize_start = Instant::now();
         self.bsp.optimize(&self.tree_optimize, |_| {});
-        self.wr_stat().optimize_time = optimize_start.elapsed().as_secs_f64();
+        self.wr_stat().optimize = optimize_start.elapsed().as_secs_f64();
 
         let verify_start = Instant::now();
         assert_eq!(
@@ -338,7 +331,7 @@ impl Model {
             self.bsp.__debug_verify_tree_state().unwrap() as u32,
             "Invalid after optimize"
         );
-        self.wr_stat().verify_time = verify_start.elapsed().as_secs_f64();
+        self.wr_stat().verify = verify_start.elapsed().as_secs_f64();
     }
 
     pub fn spawn_boids(&mut self, count: usize, at: [f32; 2], predator: bool) {

@@ -111,21 +111,11 @@ impl eframe::App for TemplateApp {
                     let stat = self.model.stats().back().unwrap();
                     let label_value_pairs = [
                         ("Count", stat.elem_count.to_string()),
-                        ("Tick Time", format!("{:.3} ms", stat.tick_time * 1000.)),
-                        (
-                            "Avg Query Time",
-                            format!("{:.6} ms", stat.avg_query_time * 1000.),
-                        ),
-                        (
-                            "Avg Step Time",
-                            format!("{:.6} ms", stat.avg_step_time * 1000.),
-                        ),
-                        ("Elem Count", stat.elem_count.to_string()),
-                        (
-                            "Optimize Time",
-                            format!("{:.6} ms", stat.optimize_time * 1000.),
-                        ),
-                        ("Verify Time", format!("{:.3} ms", stat.verify_time * 1000.)),
+                        ("Tick", format!("{:_>7.3} ms", stat.tick * 1000.)),
+                        ("avg.Query", format!("{:_>7.3} µs", stat.avg_query * 1e6)),
+                        ("avg.Step", format!("{:_>7.3} µs", stat.avg_step * 1e6)),
+                        ("Optimize", format!("{:_>7.3} µs", stat.optimize * 1e6)),
+                        ("Verify", format!("{:_>7.3} µs", stat.verify * 1e6)),
                     ];
 
                     for (label, value) in label_value_pairs.iter() {
@@ -166,9 +156,11 @@ impl eframe::App for TemplateApp {
                     self.model.tick_delta = speed / 60.0;
                 });
 
-            egui::CollapsingHeader::new("Visualize")
+            egui::CollapsingHeader::new("Bsp")
                 .default_open(true)
-                .show(ui, |ui| {});
+                .show(ui, |ui| {
+                    ui.checkbox(&mut self.render_opt.draw_grid, "Draw Grid?");
+                });
 
             guidance(ui);
         });
