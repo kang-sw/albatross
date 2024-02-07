@@ -183,6 +183,7 @@ impl eframe::App for TemplateApp {
                         node_height_effect: node_height_collapse_effect,
                         split_strategy,
                         minimum_length: minimum_size,
+                        short_axis_fallback,
                         ..
                     } = &mut self.model.tree_optimize;
 
@@ -221,6 +222,7 @@ impl eframe::App for TemplateApp {
                     let label_value_pairs = [
                         ("Ideal Depth", ideal_depth),
                         ("Max Collapse Height", max_collapse_height),
+                        ("Axis Find Fallback", short_axis_fallback),
                     ];
 
                     for (label, value) in label_value_pairs {

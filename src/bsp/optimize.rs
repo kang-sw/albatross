@@ -126,6 +126,12 @@ pub struct OptimizeParameter {
 
     /// Specifies minimum length of leaf node when splitted.
     pub minimum_length: f64,
+    /// ^^ TODO: Tidy these doc comments
+    ///
+
+    /// If split fails due to the axis that has largest stdvar is too short, how many axis
+    /// can be fallback-ed to find suboptimal axis, which has next largest stdvar?
+    pub short_axis_fallback: u16,
 }
 
 impl OptimizeParameter {
@@ -152,6 +158,7 @@ impl OptimizeParameter {
             node_height_effect: ControlIntensity::Moderate,
             split_strategy: SplitStrategy::Average,
             minimum_length: 0.,
+            short_axis_fallback: 0,
         }
     }
 
@@ -166,6 +173,7 @@ impl OptimizeParameter {
             node_height_effect: ControlIntensity::Disable,
             split_strategy: SplitStrategy::Average,
             minimum_length: 0.,
+            short_axis_fallback: 0,
         }
     }
 }
@@ -560,22 +568,34 @@ pub(crate) fn recurse_phase_2<T: Element>(
                 avg[i] /= len as f64;
             }
 
-            let variant = tree
-                .leaf_iter(node)
-                .fold(T::Vector::zero_f64(), |mut val, (_, elem)| {
-                    for i in 0..T::Vector::D {
-                        val[i] += (elem.pos[i].to_f64() - avg[i]).powi(2);
-                    }
-                    val
-                });
+            let mut variant =
+                tree.leaf_iter(node)
+                    .fold(T::Vector::zero_f64(), |mut val, (_, elem)| {
+                        for i in 0..T::Vector::D {
+                            val[i] += (elem.pos[i].to_f64() - avg[i]).powi(2);
+                        }
+                        val
+                    });
 
-            let axis = (0..T::Vector::D)
-                .max_by(|&a, &b| variant[a].partial_cmp(&variant[b]).unwrap())
-                .unwrap();
+            let mut axis = None;
+            let threshold = (params.minimum_length * 2.).max(1e-6);
 
-            if bound.length(axis).to_f64() <= (params.minimum_length * 2.).max(1e-6) {
-                return;
+            for _ in 0..(params.short_axis_fallback + 1).min(T::Vector::D as u16) {
+                let max_axis = (0..T::Vector::D)
+                    .max_by(|&a, &b| variant[a].partial_cmp(&variant[b]).unwrap())
+                    .unwrap();
+
+                if bound.length(max_axis).to_f64() <= threshold {
+                    variant[max_axis] = f64::MIN;
+                    continue;
+                }
+
+                axis = Some(max_axis);
+                break;
             }
+
+            // We couldn't find any suitable axis.
+            let Some(axis) = axis else { return };
 
             let split_min = bound.min()[axis].to_f64() + params.minimum_length;
             let split_max = bound.max()[axis].to_f64() - params.minimum_length;
