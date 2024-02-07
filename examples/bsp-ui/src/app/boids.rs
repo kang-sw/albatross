@@ -87,7 +87,7 @@ impl Default for Model {
             area_radius: 160.,
             view_radius: 3.,
             near_radius: 0.5,
-            cohesion_force: 25.,
+            cohesion_force: 28.5,
             align_force: 5.,
             separation_force: 200.,
             max_speed: 10.,

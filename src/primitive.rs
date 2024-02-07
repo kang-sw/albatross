@@ -376,6 +376,34 @@ impl<V: Vector> AabbRect<V> {
         false
     }
 
+    pub fn extend_by(&self, value: V::Num) -> Self {
+        let mut min = self.min;
+        let mut max = self.max;
+
+        for i in 0..V::D {
+            min[i] = min[i] - value;
+            max[i] = max[i] + value;
+
+            if min[i] > max[i] {
+                std::mem::swap(&mut min[i], &mut max[i]);
+            }
+        }
+
+        Self { min, max }
+    }
+
+    pub fn move_by(&self, value: V) -> Self {
+        let mut min = self.min;
+        let mut max = self.max;
+
+        for i in 0..V::D {
+            min[i] = min[i] + value[i];
+            max[i] = max[i] + value[i];
+        }
+
+        Self { min, max }
+    }
+
     pub fn contains_axis(&self, axis: AxisIndex, value: V::Num) -> bool {
         self.min[axis] <= value && value < self.max[axis]
     }
