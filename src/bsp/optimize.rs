@@ -590,13 +590,25 @@ pub(crate) fn recurse_phase_2<T: ElementData>(
 
             let split_at = match params.split_strategy {
                 SplitStrategy::Average => avg[axis],
-                SplitStrategy::SpatialMedian => {
-                    avg[axis]
-                    // todo!("Weighted average of distance from center")
-                }
-                SplitStrategy::ClusterMedian => {
-                    avg[axis]
-                    // todo!("Weighted average of distance from center")
+                ref x @ (SplitStrategy::SpatialMedian | SplitStrategy::ClusterMedian) => {
+                    let positive_weight = *x == SplitStrategy::SpatialMedian;
+                    let (w, wp) =
+                        tree.leaf_iter(node)
+                            .fold((0., 0.), |(sum_weight, sum), (_, elem)| {
+                                let distance_from_center =
+                                    (elem.pos[axis].to_f64() - avg[axis]).abs().max(1e-6);
+                                let weight = if positive_weight {
+                                    distance_from_center
+                                } else {
+                                    1. / distance_from_center
+                                };
+
+                                let weighted_pos = elem.pos[axis].to_f64() * weight;
+
+                                (sum_weight + weight, sum + weighted_pos)
+                            });
+
+                    wp / w
                 }
             }
             .clamp(split_min, split_max);

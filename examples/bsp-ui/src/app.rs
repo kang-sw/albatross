@@ -220,8 +220,10 @@ impl eframe::App for TemplateApp {
                         });
                     }
 
+                    let mut collapse_all = false;
                     ui.columns(2, |cols| {
                         use albatross::bsp::SplitStrategy::*;
+                        let prev = split_strategy.clone();
 
                         cols[0].label("Split Strategy");
                         cols[1].columns(3, |cols| {
@@ -237,8 +239,11 @@ impl eframe::App for TemplateApp {
                                 "Spatial Median",
                             );
                         });
-                    });
 
+                        if prev != *split_strategy {
+                            collapse_all = true;
+                        }
+                    });
                     let label_value_pairs = [("Minimum Size", minimum_size)];
 
                     for (label, value) in label_value_pairs {
@@ -247,6 +252,10 @@ impl eframe::App for TemplateApp {
                             cols[1]
                                 .add(egui::DragValue::new(value).speed(0.01).clamp_range(0..=100));
                         });
+                    }
+
+                    if collapse_all {
+                        self.model.collapse_all();
                     }
                 });
 
