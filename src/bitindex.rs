@@ -86,12 +86,22 @@ impl<const N: usize> BitIndexSet<N> {
         true
     }
 
-    pub fn iter(&self) -> BitIndexerIter<N> {
-        BitIndexerIter {
+    pub fn iter(&self) -> BitIndexSetIter<N> {
+        BitIndexSetIter {
             bits: &self.bits,
             cache: self.bits[0],
             index: 0,
         }
+    }
+}
+
+impl<const N: usize> std::iter::FromIterator<usize> for BitIndexSet<N> {
+    fn from_iter<I: IntoIterator<Item = usize>>(iter: I) -> Self {
+        let mut result = Self::default();
+        for i in iter {
+            result.set(i);
+        }
+        result
     }
 }
 
@@ -185,13 +195,13 @@ impl<const N: usize> std::fmt::Debug for BitIndexSet<N> {
     }
 }
 
-pub struct BitIndexerIter<'a, const N: usize> {
+pub struct BitIndexSetIter<'a, const N: usize> {
     bits: &'a [u64; N],
     cache: u64,
     index: usize,
 }
 
-impl<'a, const N: usize> Iterator for BitIndexerIter<'a, N> {
+impl<'a, const N: usize> Iterator for BitIndexSetIter<'a, N> {
     type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
