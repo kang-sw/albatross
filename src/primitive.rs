@@ -334,6 +334,7 @@ impl<V: Vector> AabbRect<V> {
     }
 
     pub fn length(&self, axis: AxisIndex) -> V::Num {
+        debug_assert!(self.max[axis] - self.min[axis] >= V::Num::zero());
         self.max[axis] - self.min[axis]
     }
 
