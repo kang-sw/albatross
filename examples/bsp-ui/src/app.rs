@@ -183,7 +183,7 @@ impl eframe::App for TemplateApp {
                         node_height_effect: node_height_collapse_effect,
                         split_strategy,
                         minimum_length: minimum_size,
-                        short_axis_fallback,
+                        suboptimal_split_count: short_axis_fallback,
                         ..
                     } = &mut self.model.tree_optimize;
 

@@ -131,7 +131,7 @@ pub struct OptimizeParameter {
 
     /// If split fails due to the axis that has largest stdvar is too short, how many axis
     /// can be fallback-ed to find suboptimal axis, which has next largest stdvar?
-    pub short_axis_fallback: u16,
+    pub suboptimal_split_count: u16,
 }
 
 impl OptimizeParameter {
@@ -158,7 +158,7 @@ impl OptimizeParameter {
             node_height_effect: ControlIntensity::Moderate,
             split_strategy: SplitStrategy::Average,
             minimum_length: 0.,
-            short_axis_fallback: 0,
+            suboptimal_split_count: 1,
         }
     }
 
@@ -173,7 +173,7 @@ impl OptimizeParameter {
             node_height_effect: ControlIntensity::Disable,
             split_strategy: SplitStrategy::Average,
             minimum_length: 0.,
-            short_axis_fallback: 0,
+            suboptimal_split_count: 1,
         }
     }
 }
@@ -580,7 +580,7 @@ pub(crate) fn recurse_phase_2<T: Element>(
             let mut axis = None;
             let threshold = (params.minimum_length * 2.).max(1e-6);
 
-            for _ in 0..(params.short_axis_fallback + 1).min(T::Vector::D as u16) {
+            for _ in 0..(params.suboptimal_split_count + 1).min(T::Vector::D as u16) {
                 let max_axis = (0..T::Vector::D)
                     .max_by(|&a, &b| variant[a].partial_cmp(&variant[b]).unwrap())
                     .unwrap();
