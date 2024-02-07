@@ -7,7 +7,7 @@ pub struct TemplateApp {
     // Example stuff:
     model: boids::Model,
     render_opt: boids::RenderOption,
-    spawn_count: usize,
+    spawning_predetor: bool,
     once: std::sync::OnceLock<()>,
 }
 
@@ -39,7 +39,11 @@ impl eframe::App for TemplateApp {
                 let pos = ctx.input(|i| i.pointer.interact_pos().unwrap());
                 let pos = boids::to_world(pos, self.render_opt.offset, self.render_opt.zoom);
 
-                self.model.spawn_boids(self.spawn_count.max(5), pos);
+                self.model.spawn_boids(
+                    if self.spawning_predetor { 1 } else { 10 },
+                    pos,
+                    self.spawning_predetor,
+                );
             }
             if resp.dragged_by(egui::PointerButton::Primary) {
                 let delta = resp.drag_delta();
@@ -57,6 +61,27 @@ impl eframe::App for TemplateApp {
         });
 
         egui::Window::new("Boid").show(ctx, |ui| {
+            if ui.input(|i| i.key_pressed(egui::Key::Tab)) {
+                self.spawning_predetor = !self.spawning_predetor;
+            }
+
+            if ui
+                .selectable_label(
+                    self.spawning_predetor,
+                    format!(
+                        "Spawning {}",
+                        if self.spawning_predetor {
+                            "Predetor"
+                        } else {
+                            "Boid"
+                        }
+                    ),
+                )
+                .clicked()
+            {
+                self.spawning_predetor = !self.spawning_predetor;
+            }
+
             egui::CollapsingHeader::new("Stats")
                 .default_open(true)
                 .show(ui, |ui| {
@@ -94,6 +119,8 @@ impl eframe::App for TemplateApp {
                     let mut speed = self.model.tick_delta * 60.0;
                     let label_param_pairs = [
                         ("Simulation Speed", &mut speed),
+                        ("Max Speed", &mut self.model.max_speed),
+                        ("Predetor Avoidance", &mut self.model.predetor_avoidance),
                         ("Area Radius", &mut self.model.area_radius),
                         ("View Radius", &mut self.model.view_radius),
                         ("Near Radius", &mut self.model.near_radius),

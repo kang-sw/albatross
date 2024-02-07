@@ -1,9 +1,16 @@
-use std::collections::VecDeque;
+use std::collections::{BTreeSet, VecDeque};
 
 use albatross::{bsp, primitive::AabbRect, ControlIntensity};
 use egui::Stroke;
 use nalgebra::Vector2;
 use web_time::Instant;
+
+const BOID_SIZE: f32 = 0.2;
+const PREDETOR_SIZE: f32 = 0.6;
+const BOID_ARROW_LEN: f32 = 0.5;
+const PREDETOR_ARROW_LEN: f32 = 1.0;
+const BOID_COLOR: egui::Color32 = egui::Color32::WHITE;
+const PREDETOR_COLOR: egui::Color32 = egui::Color32::RED;
 
 struct BspData {
     entity: hecs::Entity,
@@ -23,8 +30,7 @@ struct BoidForce {
     acc: Vector2<f32>,
 }
 
-struct Predetor;
-struct Prey;
+struct IsPredetor(bool);
 
 pub struct Model {
     ecs: hecs::World,
@@ -42,6 +48,9 @@ pub struct Model {
     pub cohesion_force: f32,
     pub align_force: f32,
     pub separation_force: f32,
+    pub max_speed: f32,
+
+    pub predetor_avoidance: f32,
 
     pub tree_optimize: bsp::OptimizeParameter,
 
@@ -70,12 +79,14 @@ impl Default for Model {
 
             tick_delta: 1. / 60.,
 
-            area_radius: 30.,
+            area_radius: 60.,
             view_radius: 2.,
             near_radius: 0.5,
-            cohesion_force: 6.,
+            cohesion_force: 9.,
             align_force: 0.25,
-            separation_force: 11.,
+            separation_force: 9.,
+            max_speed: 10.,
+            predetor_avoidance: 25.,
 
             stat_max_record: 120,
             tree_optimize: bsp::OptimizeParameter::moderate(4).with(|x| {
@@ -123,12 +134,16 @@ impl Model {
         let start_time;
         let mut query_count;
         let mut query_time = 0.;
+        let mut removed_entities = BTreeSet::new();
 
         {
-            let mut q_elems = self.ecs.query::<(&BoidKinetic, &bsp::ElementIndex)>();
+            let mut q_elems = self
+                .ecs
+                .query::<(&BoidKinetic, &bsp::ElementIndex, &IsPredetor)>();
             let q_elems = q_elems.view();
 
             let mut adjacent_kinetics = Vec::new();
+            let mut predetor_kinetics = Vec::new();
 
             start_time = Instant::now();
             query_count = 0;
@@ -136,10 +151,11 @@ impl Model {
             for (entity, force) in self.ecs.query::<&mut BoidForce>().into_iter() {
                 query_count += 1;
 
-                let (boid, tree_key) = q_elems.get(entity).unwrap();
+                let (boid, tree_key, IsPredetor(is_predetor)) = q_elems.get(entity).unwrap();
                 let region = AabbRect::new_circular(boid.pos.into(), self.view_radius);
 
                 adjacent_kinetics.clear();
+                predetor_kinetics.clear();
 
                 // Query all nearby boids
                 let query_start = Instant::now();
@@ -150,7 +166,8 @@ impl Model {
                             continue;
                         }
 
-                        let (other_boid, _) = q_elems.get(elem.entity).unwrap();
+                        let (other_boid, _, IsPredetor(other_is_predetor)) =
+                            q_elems.get(elem.entity).unwrap();
                         let diff = other_boid.pos - boid.pos;
                         let distance = diff.norm();
 
@@ -158,7 +175,15 @@ impl Model {
                             continue;
                         }
 
-                        adjacent_kinetics.push((other_boid, distance));
+                        if *is_predetor && !*other_is_predetor && distance < PREDETOR_SIZE {
+                            predetor_kinetics.push((elem.entity, other_boid, distance));
+                        }
+
+                        if !*is_predetor && *other_is_predetor {
+                            predetor_kinetics.push((elem.entity, other_boid, distance));
+                        } else {
+                            adjacent_kinetics.push((other_boid, distance));
+                        }
                     }
                 });
 
@@ -193,11 +218,37 @@ impl Model {
                         avg + (boid.pos - kin.pos) * (1. / distance.max(0.0001))
                     });
 
+                // Calculate predetor avoidance
+                let predetor_force = if *is_predetor {
+                    // Predetor kinetics holds "Swallowed" entities.
+                    removed_entities.extend(predetor_kinetics.drain(..).map(|(e, ..)| e));
+
+                    // Multiply doubled cohesion if it's predetor
+                    cohesion_dir
+                } else {
+                    // Avoid predetors
+                    let mut escape_acc = Vector2::zeros();
+
+                    for (_, predetor, _) in predetor_kinetics.iter() {
+                        let predetor_dir = boid.pos - predetor.pos;
+                        escape_acc += predetor_dir * self.predetor_avoidance;
+                    }
+
+                    escape_acc
+                };
+
                 force.acc = gravity
                     + cohesion_dir * self.cohesion_force
                     + align_dir * self.align_force
-                    + separation_dir * self.separation_force;
+                    + separation_dir * self.separation_force
+                    + predetor_force;
             }
+        }
+
+        for entity in removed_entities {
+            let tree_key = *self.ecs.get::<&bsp::ElementIndex>(entity).unwrap();
+            self.bsp.remove(tree_key);
+            self.ecs.despawn(entity).unwrap();
         }
 
         self.wr_stat().avg_query_time = query_time / query_count as f64;
@@ -208,9 +259,14 @@ impl Model {
     fn step(&mut self, dt: f64) {
         let step_start = Instant::now();
 
-        for (_entity, (kin, force, tree_key)) in self
+        for (_entity, (kin, force, tree_key, predetor)) in self
             .ecs
-            .query::<(&mut BoidKinetic, &BoidForce, &bsp::ElementIndex)>()
+            .query::<(
+                &mut BoidKinetic,
+                &BoidForce,
+                &bsp::ElementIndex,
+                &IsPredetor,
+            )>()
             .iter()
         {
             // Add some randomness on force
@@ -235,6 +291,17 @@ impl Model {
                 let vert_spd = kin.vel.dot(&u_outer).max(0.);
                 kin.vel -= u_outer * vert_spd * 1.4;
                 kin.vel -= u_outer * fastrand::f32() * 0.1;
+            }
+
+            let speed = kin.vel.norm();
+            let max_speed = if predetor.0 {
+                self.max_speed * 1.5
+            } else {
+                self.max_speed
+            };
+
+            if speed > max_speed {
+                kin.vel *= self.max_speed / speed;
             }
 
             kin.pos += kin.vel * dt as f32;
@@ -266,17 +333,20 @@ impl Model {
         self.wr_stat().verify_time = verify_start.elapsed().as_secs_f64();
     }
 
-    pub fn spawn_boids(&mut self, count: usize, at: [f32; 2]) {
+    pub fn spawn_boids(&mut self, count: usize, at: [f32; 2], predetor: bool) {
         for _ in 0..count {
-            let entity = self.ecs.spawn((BoidKinetic {
-                pos: {
-                    let mut v = at;
-                    v[0] += self.rand.f32() - 0.5;
-                    v[1] += self.rand.f32() - 0.5;
-                    v.into()
+            let entity = self.ecs.spawn((
+                BoidKinetic {
+                    pos: {
+                        let mut v = at;
+                        v[0] += self.rand.f32() - 0.5;
+                        v[1] += self.rand.f32() - 0.5;
+                        v.into()
+                    },
+                    vel: [0; 2].map(|_| self.rand.f32() - 0.5).into(),
                 },
-                vel: [0; 2].map(|_| self.rand.f32() - 0.5).into(),
-            },));
+                IsPredetor(predetor),
+            ));
             let tree_key = self.bsp.insert(at, BspData { entity });
             self.ecs
                 .insert(
@@ -310,10 +380,6 @@ impl Default for RenderOption {
         }
     }
 }
-
-const BOID_SIZE: f32 = 0.2;
-const BOID_ARROW_LEN: f32 = 0.5;
-const BOID_COLOR: egui::Color32 = egui::Color32::WHITE;
 
 impl Model {
     pub fn draw(
@@ -374,11 +440,18 @@ impl Model {
         );
 
         // Draw boids
-        for (_entity, boid) in self.ecs.query::<&BoidKinetic>().iter() {
-            let pos = to_screen(boid.pos, offset, zoom);
-            p.circle_filled(pos.into(), BOID_SIZE * zoom, BOID_COLOR);
+        for (_entity, (boid, is_predetor)) in self.ecs.query::<(&BoidKinetic, &IsPredetor)>().iter()
+        {
+            let (color, size, arrow_len) = if is_predetor.0 {
+                (PREDETOR_COLOR, PREDETOR_SIZE, PREDETOR_ARROW_LEN)
+            } else {
+                (BOID_COLOR, BOID_SIZE, BOID_ARROW_LEN)
+            };
 
-            let arrow_dst = boid.pos + boid.vel.normalize() * BOID_ARROW_LEN;
+            let pos = to_screen(boid.pos, offset, zoom);
+            p.circle_filled(pos.into(), size * zoom, color);
+
+            let arrow_dst = boid.pos + boid.vel.normalize() * arrow_len;
             let mut arrow_dst = to_screen(arrow_dst, offset, zoom);
 
             arrow_dst[0] -= pos[0];
@@ -387,10 +460,7 @@ impl Model {
             p.arrow(
                 pos.into(),
                 arrow_dst.into(),
-                egui::Stroke {
-                    width: 1.0,
-                    color: BOID_COLOR,
-                },
+                egui::Stroke { width: 1.0, color },
             );
         }
 
