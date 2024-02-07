@@ -7,10 +7,12 @@ fn test() {
         relocated: bool,
     }
 
-    impl ElementData for MyElem {
+    impl Element for MyElem {
         type Vector = [i32; 3];
+        type ElemKey = ElemKey;
+        type NodeKey = NodeKey;
 
-        fn relocated(&mut self, _owner: TreeNodeIndex) {
+        fn relocated(&mut self, _owner: NodeKey) {
             self.relocated = true;
         }
     }

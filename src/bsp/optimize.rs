@@ -3,10 +3,9 @@ use slotmap::Key;
 use tap::Pipe as _;
 use tap::Tap as _;
 
-use super::ElementData;
+use super::Element;
 use super::Tree;
 use super::TreeNode;
-use super::TreeNodeIndex;
 use super::TreeNodeLeaf;
 use super::TreeNodeSplit;
 
@@ -173,19 +172,12 @@ impl OptimizeParameter {
 
 /// This is to manage outer context which relies on tree node indices.
 #[derive(EnumAsInner)]
-pub enum OptimizationEvent {
-    Split {
-        from: TreeNodeIndex,
-        minus: TreeNodeIndex,
-        plus: TreeNodeIndex,
-    },
-    Merge {
-        from: TreeNodeIndex,
-        into: TreeNodeIndex,
-    },
+pub enum OptimizationEvent<K: Key> {
+    Split { from: K, minus: K, plus: K },
+    Merge { from: K, into: K },
 }
 
-impl<T: ElementData> Tree<T> {
+impl<T: Element> Tree<T> {
     /// Optimizes the structure of the BSP tree according to specified parameters,
     /// enhancing its efficiency for spatial querying and management of geometric
     /// elements. This method evaluates the current state of the tree against the
@@ -212,7 +204,7 @@ impl<T: ElementData> Tree<T> {
     pub fn optimize(
         &mut self,
         params: &OptimizeParameter,
-        mut on_update: impl FnMut(OptimizationEvent),
+        mut on_update: impl FnMut(OptimizationEvent<T::NodeKey>),
     ) {
         /*
             PSEUDO IMPLMENTATION OF CODE
@@ -349,14 +341,14 @@ macro_rules! f {
     };
 }
 
-pub(crate) fn recurse_phase_1<T: ElementData>(
+pub(crate) fn recurse_phase_1<T: Element>(
     context: &mut (
         &mut Tree<T>,
-        &mut impl FnMut(OptimizationEvent),
+        &mut impl FnMut(OptimizationEvent<T::NodeKey>),
         &OptimizeParameter,
     ),
     depth: u16,
-    node: TreeNodeIndex,
+    node: T::NodeKey,
 ) -> P1Report {
     match f!(context.tree).nodes[node] {
         TreeNode::Split(TreeNodeSplit { minus, plus, .. }) => {
@@ -417,7 +409,7 @@ pub(crate) fn recurse_phase_1<T: ElementData>(
                 });
 
                 // Subnodes' bound will be merged into this.
-                let mut bounds: [<T as ElementData>::Vector; 2] = [
+                let mut bounds: [<T as Element>::Vector; 2] = [
                     <T::Vector as VectorExt>::maximum(),
                     <T::Vector as VectorExt>::minimum(),
                 ];
@@ -448,15 +440,15 @@ pub(crate) fn recurse_phase_1<T: ElementData>(
     }
 }
 
-pub(crate) fn collapse_recursive<T: ElementData>(
+pub(crate) fn collapse_recursive<T: Element>(
     context: &mut (
         &mut Tree<T>,
-        &mut impl FnMut(OptimizationEvent),
+        &mut impl FnMut(OptimizationEvent<T::NodeKey>),
         &OptimizeParameter,
     ),
     bounds: &mut [T::Vector; 2],
-    root_id: TreeNodeIndex,
-    node: TreeNodeIndex,
+    root_id: T::NodeKey,
+    node: T::NodeKey,
 ) {
     match f!(context.tree).nodes.remove(node).unwrap() {
         TreeNode::Split(TreeNodeSplit { minus, plus, .. }) => {
@@ -515,14 +507,14 @@ pub(crate) fn collapse_recursive<T: ElementData>(
 }
 
 /* ----------------------------------- Phase 2: Split ----------------------------------- */
-pub(crate) fn recurse_phase_2<T: ElementData>(
+pub(crate) fn recurse_phase_2<T: Element>(
     context: &mut (
         &mut Tree<T>,
-        &mut impl FnMut(OptimizationEvent),
+        &mut impl FnMut(OptimizationEvent<T::NodeKey>),
         &OptimizeParameter,
     ),
     depth: u16,
-    node: TreeNodeIndex,
+    node: T::NodeKey,
 ) {
     match f!(context.tree).nodes[node] {
         TreeNode::Split(TreeNodeSplit { minus, plus, .. }) => {
@@ -713,7 +705,7 @@ pub(crate) fn recurse_phase_2<T: ElementData>(
 
 /* ------------------------------------- Phase 3: Validation ------------------------------------ */
 
-pub(crate) fn recurse_phase_3<T: ElementData>(tree: &mut Tree<T>, node_id: TreeNodeIndex) {
+pub(crate) fn recurse_phase_3<T: Element>(tree: &mut Tree<T>, node_id: T::NodeKey) {
     // Simply visit all leaf nodes; then pick one.
     match tree.nodes[node_id] {
         TreeNode::Split(TreeNodeSplit { minus, plus, .. }) => {

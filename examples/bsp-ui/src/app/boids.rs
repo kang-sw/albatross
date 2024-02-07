@@ -20,8 +20,15 @@ struct BspData {
     entity: hecs::Entity,
 }
 
-impl bsp::ElementData for BspData {
+albatross::define_key!(
+    struct TreeNodeIndex;
+    struct ElementIndex;
+);
+
+impl bsp::Element for BspData {
     type Vector = [f32; 2];
+    type ElemKey = ElementIndex;
+    type NodeKey = TreeNodeIndex;
 }
 
 #[derive(Clone, Copy)]
@@ -147,7 +154,7 @@ impl Model {
         {
             let mut q_elems = self
                 .ecs
-                .query::<(&BoidKinetic, &bsp::ElementIndex, &IsPredator)>();
+                .query::<(&BoidKinetic, &ElementIndex, &IsPredator)>();
             let q_elems = q_elems.view();
 
             let mut adjacent_kinetics = Vec::new();
@@ -258,7 +265,7 @@ impl Model {
         }
 
         for entity in removed_entities {
-            let tree_key = *self.ecs.get::<&bsp::ElementIndex>(entity).unwrap();
+            let tree_key = *self.ecs.get::<&ElementIndex>(entity).unwrap();
             self.bsp.remove(tree_key);
             self.ecs.despawn(entity).unwrap();
         }
@@ -272,12 +279,7 @@ impl Model {
 
         for (_entity, (kin, force, tree_key, predator)) in self
             .ecs
-            .query::<(
-                &mut BoidKinetic,
-                &BoidForce,
-                &bsp::ElementIndex,
-                &IsPredator,
-            )>()
+            .query::<(&mut BoidKinetic, &BoidForce, &ElementIndex, &IsPredator)>()
             .iter()
         {
             // Add some randomness on force
