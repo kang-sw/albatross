@@ -15,7 +15,13 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "eframe template",
         native_options,
-        Box::new(|cc| Box::new(bsp_ui::TemplateApp::new(cc))),
+        Box::new(|cc| {
+            cc.egui_ctx.style_mut(|style| {
+                style.visuals = egui::Visuals::dark();
+            });
+
+            Box::new(bsp_ui::TemplateApp::new(cc))
+        }),
     )
 }
 

@@ -27,6 +27,10 @@ impl eframe::App for TemplateApp {
         self.once.get_or_init(|| {
             let screen_size = ctx.available_rect().size();
             self.render_opt.offset = [screen_size.x / 2.0, screen_size.y / 2.0];
+
+            ctx.style_mut(|style| {
+                style.visuals = egui::Visuals::dark();
+            });
         });
 
         ctx.request_repaint();
@@ -96,6 +100,10 @@ impl eframe::App for TemplateApp {
                     self.model.enable_tick = !self.model.enable_tick;
                 }
             });
+
+            egui::widgets::global_dark_light_mode_buttons(ui);
+
+            ui.separator();
 
             egui::CollapsingHeader::new("Stats")
                 .default_open(true)
