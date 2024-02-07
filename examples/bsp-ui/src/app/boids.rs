@@ -88,15 +88,15 @@ impl Default for Model {
             bsp: Default::default(),
             rand: fastrand::Rng::with_seed(0),
 
-            tick_delta: 1. / 15.,
+            tick_delta: 1. / 30.,
             enable_tick: true,
 
             area_radius: 160.,
             view_radius: 3.,
             near_radius: 0.5,
-            cohesion_force: 28.5,
-            align_force: 5.,
-            separation_force: 200.,
+            cohesion_force: 24.,
+            align_force: 11.,
+            separation_force: 344.,
             max_speed: 10.,
             predator_avoidance: 150.,
 
