@@ -1,6 +1,7 @@
 use std::collections::{BTreeSet, VecDeque};
 
 use albatross::{
+    bitindex::BitIndexSet,
     bsp::{self, OptimizeParameter},
     primitive::AabbRect,
     ControlIntensity,
@@ -107,6 +108,7 @@ impl Default for Model {
                 x.balancing = ControlIntensity::Moderate;
                 x.max_collapse_height = u16::MAX;
                 x.node_height_effect = ControlIntensity::Disable;
+                x.square_split_axes = BitIndexSet::all();
             }),
 
             stats: Default::default(),

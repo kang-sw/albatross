@@ -9,6 +9,7 @@ use super::TreeNode;
 use super::TreeNodeLeaf;
 use super::TreeNodeSplit;
 
+use crate::bitindex::BitIndexSet;
 use crate::primitive::AabbRect;
 use crate::primitive::NumberCommon;
 use crate::primitive::Vector;
@@ -131,7 +132,11 @@ pub struct OptimizeParameter {
 
     /// If split fails due to the axis that has largest stdvar is too short, how many axis
     /// can be fallback-ed to find suboptimal axis, which has next largest stdvar?
-    pub suboptimal_split_count: u16,
+    pub suboptimal_split_count: u8,
+
+    /// For axes specified in this set, the final variance on choosing axis to split is
+    /// amplified by the axis length ratio to make the space split square as possible.
+    pub square_split_axes: BitIndexSet<1>,
 }
 
 impl OptimizeParameter {
@@ -159,6 +164,7 @@ impl OptimizeParameter {
             split_strategy: SplitStrategy::Average,
             minimum_length: 0.,
             suboptimal_split_count: 1,
+            square_split_axes: BitIndexSet::empty(),
         }
     }
 
@@ -174,6 +180,7 @@ impl OptimizeParameter {
             split_strategy: SplitStrategy::Average,
             minimum_length: 0.,
             suboptimal_split_count: 1,
+            square_split_axes: BitIndexSet::empty(),
         }
     }
 }
@@ -379,8 +386,12 @@ pub(crate) fn recurse_phase_1<T: Element>(
                     break 'collapse true;
                 }
 
+                // TODO: On specific circumstance where 'empty shape' is intentionally created ...
+                // - Consider when to disable balance!
+                let disable_balance = false;
+
                 let balance_coeff = params.balancing as usize;
-                let unbalanced = if balance_coeff > 0 {
+                let unbalanced = if !disable_balance && balance_coeff > 0 {
                     let unbalance_threshold = UNBALANCE_THRES_PCNT[balance_coeff - 1];
                     let diff = cnt1.abs_diff(cnt2);
 
@@ -577,20 +588,49 @@ pub(crate) fn recurse_phase_2<T: Element>(
                         val
                     });
 
+            let mut bound_lengths = T::Vector::zero_f64();
+            for i in 0..T::Vector::D {
+                bound_lengths[i] = bound.length(i).to_f64();
+            }
+
+            'square_split: {
+                if params.square_split_axes.is_empty() {
+                    break 'square_split;
+                }
+
+                let mut shortest_border = f64::INFINITY;
+
+                for i in 0..T::Vector::D {
+                    if params.square_split_axes[i] {
+                        shortest_border = shortest_border.min(bound_lengths[i]);
+                    }
+                }
+
+                if shortest_border.is_infinite() {
+                    break 'square_split;
+                }
+
+                for i in 0..T::Vector::D {
+                    if params.square_split_axes.get(i) {
+                        variant[i] *= bound_lengths[i] / shortest_border;
+                    }
+                }
+            }
+
             let mut axis = None;
             let threshold = (params.minimum_length * 2.).max(1e-6);
 
-            for _ in 0..(params.suboptimal_split_count + 1).min(T::Vector::D as u16) {
-                let max_axis = (0..T::Vector::D)
+            for _ in 0..(params.suboptimal_split_count + 1).min(T::Vector::D as u8) {
+                let axis_max = (0..T::Vector::D)
                     .max_by(|&a, &b| variant[a].partial_cmp(&variant[b]).unwrap())
                     .unwrap();
 
-                if bound.length(max_axis).to_f64() <= threshold {
-                    variant[max_axis] = f64::MIN;
+                if bound_lengths[axis_max].to_f64() <= threshold {
+                    variant[axis_max] = f64::MIN;
                     continue;
                 }
 
-                axis = Some(max_axis);
+                axis = Some(axis_max);
                 break;
             }
 

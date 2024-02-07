@@ -1,27 +1,51 @@
 /// Quickly store set of fixed number of indexes.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct BitIndexer<const N_U64: usize> {
+pub struct BitIndexSet<const N_U64: usize> {
     bits: [u64; N_U64],
 }
 
-impl<const N: usize> Default for BitIndexer<N> {
+impl<const N: usize> Default for BitIndexSet<N> {
     fn default() -> Self {
         Self { bits: [0; N] }
     }
 }
 
-impl<const N: usize> BitIndexer<N> {
-    pub const fn len() -> usize {
+impl<const N: usize> BitIndexSet<N> {
+    pub const fn capacity() -> usize {
         N * 64
     }
 
-    pub fn set(&mut self, index: usize, value: bool) {
-        let (i, j) = (index / 64, index % 64);
-        if value {
-            self.bits[i] |= 1 << j;
-        } else {
-            self.bits[i] &= !(1 << j);
+    pub fn len(&self) -> usize {
+        self.iter().count()
+    }
+
+    pub const fn all() -> Self {
+        Self {
+            bits: [u64::MAX; N],
         }
+    }
+
+    pub const fn empty() -> Self {
+        Self { bits: [0; N] }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        for i in 0..N {
+            if self.bits[i] != 0 {
+                return false;
+            }
+        }
+        true
+    }
+
+    pub fn set(&mut self, index: usize) {
+        let (i, j) = (index / 64, index % 64);
+        self.bits[i] |= 1 << j;
+    }
+
+    pub fn unset(&mut self, index: usize) {
+        let (i, j) = (index / 64, index % 64);
+        self.bits[i] &= !(1 << j);
     }
 
     pub fn get(&self, index: usize) -> bool {
@@ -71,7 +95,19 @@ impl<const N: usize> BitIndexer<N> {
     }
 }
 
-impl<const N: usize> std::ops::BitAnd for BitIndexer<N> {
+impl<const N: usize> std::ops::Index<usize> for BitIndexSet<N> {
+    type Output = bool;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        if self.get(index) {
+            &true
+        } else {
+            &false
+        }
+    }
+}
+
+impl<const N: usize> std::ops::BitAnd for BitIndexSet<N> {
     type Output = Self;
 
     fn bitand(self, rhs: Self) -> Self::Output {
@@ -83,7 +119,7 @@ impl<const N: usize> std::ops::BitAnd for BitIndexer<N> {
     }
 }
 
-impl<const N: usize> std::ops::BitOr for BitIndexer<N> {
+impl<const N: usize> std::ops::BitOr for BitIndexSet<N> {
     type Output = Self;
 
     fn bitor(self, rhs: Self) -> Self::Output {
@@ -95,7 +131,7 @@ impl<const N: usize> std::ops::BitOr for BitIndexer<N> {
     }
 }
 
-impl<const N: usize> std::ops::BitXor for BitIndexer<N> {
+impl<const N: usize> std::ops::BitXor for BitIndexSet<N> {
     type Output = Self;
 
     fn bitxor(self, rhs: Self) -> Self::Output {
@@ -107,7 +143,7 @@ impl<const N: usize> std::ops::BitXor for BitIndexer<N> {
     }
 }
 
-impl<const N: usize> std::ops::Not for BitIndexer<N> {
+impl<const N: usize> std::ops::Not for BitIndexSet<N> {
     type Output = Self;
 
     fn not(self) -> Self::Output {
@@ -119,7 +155,7 @@ impl<const N: usize> std::ops::Not for BitIndexer<N> {
     }
 }
 
-impl<const N: usize> std::ops::BitAndAssign for BitIndexer<N> {
+impl<const N: usize> std::ops::BitAndAssign for BitIndexSet<N> {
     fn bitand_assign(&mut self, rhs: Self) {
         for i in 0..N {
             self.bits[i] &= rhs.bits[i];
@@ -127,7 +163,7 @@ impl<const N: usize> std::ops::BitAndAssign for BitIndexer<N> {
     }
 }
 
-impl<const N: usize> std::ops::BitOrAssign for BitIndexer<N> {
+impl<const N: usize> std::ops::BitOrAssign for BitIndexSet<N> {
     fn bitor_assign(&mut self, rhs: Self) {
         for i in 0..N {
             self.bits[i] |= rhs.bits[i];
@@ -135,7 +171,7 @@ impl<const N: usize> std::ops::BitOrAssign for BitIndexer<N> {
     }
 }
 
-impl<const N: usize> std::ops::BitXorAssign for BitIndexer<N> {
+impl<const N: usize> std::ops::BitXorAssign for BitIndexSet<N> {
     fn bitxor_assign(&mut self, rhs: Self) {
         for i in 0..N {
             self.bits[i] ^= rhs.bits[i];
@@ -143,7 +179,7 @@ impl<const N: usize> std::ops::BitXorAssign for BitIndexer<N> {
     }
 }
 
-impl<const N: usize> std::fmt::Debug for BitIndexer<N> {
+impl<const N: usize> std::fmt::Debug for BitIndexSet<N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_list().entries(self.iter()).finish()
     }
@@ -181,7 +217,7 @@ impl<'a, const N: usize> Iterator for BitIndexerIter<'a, N> {
 fn __test_bits() {
     use tap::Tap;
 
-    let mut bits = BitIndexer::<3>::default();
+    let mut bits = BitIndexSet::<3>::default();
 
     let trues = [0, 4, 5, 9, 11, 2, 52, 161, 32, 144, 33, 64, 98, 45];
     let sorted_trues = { trues }.tap_mut(|x| x.sort());
@@ -190,7 +226,7 @@ fn __test_bits() {
     assert!(bits.iter().count() == 0);
 
     for &i in trues.iter() {
-        bits.set(i, true);
+        bits.set(i);
     }
 
     assert!(trues.iter().all(|&i| bits.get(i)));
@@ -201,7 +237,7 @@ fn __test_bits() {
     other_bits.clear();
 
     for &i in trues.iter() {
-        bits.set(i, false);
+        bits.unset(i);
     }
 
     assert!(other_bits == bits);

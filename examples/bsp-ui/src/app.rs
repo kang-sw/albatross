@@ -1,6 +1,6 @@
 mod boids;
 
-use albatross::bsp::OptimizeParameter;
+use albatross::{bitindex::BitIndexSet, bsp::OptimizeParameter};
 use egui::RichText;
 use web_time::Instant;
 
@@ -184,6 +184,7 @@ impl eframe::App for TemplateApp {
                         split_strategy,
                         minimum_length: minimum_size,
                         suboptimal_split_count: short_axis_fallback,
+                        square_split_axes,
                         ..
                     } = &mut self.model.tree_optimize;
 
@@ -219,10 +220,11 @@ impl eframe::App for TemplateApp {
                         });
                     }
 
+                    let mut short_axis_fallback_u16 = *short_axis_fallback as u16;
                     let label_value_pairs = [
                         ("Ideal Depth", ideal_depth),
                         ("Max Collapse Height", max_collapse_height),
-                        ("Axis Find Fallback", short_axis_fallback),
+                        ("Axis Find Fallback", &mut short_axis_fallback_u16),
                     ];
 
                     for (label, value) in label_value_pairs {
@@ -231,6 +233,8 @@ impl eframe::App for TemplateApp {
                             cols[1].add(egui::DragValue::new(value).speed(1).clamp_range(0..=100));
                         });
                     }
+
+                    *short_axis_fallback = short_axis_fallback_u16 as u8;
 
                     let mut collapse_all = false;
                     ui.columns(2, |cols| {
@@ -264,6 +268,22 @@ impl eframe::App for TemplateApp {
                             cols[1]
                                 .add(egui::DragValue::new(value).speed(0.01).clamp_range(0..=100));
                         });
+                    }
+
+                    {
+                        let mut square_shape = !square_split_axes.is_empty();
+                        if ui
+                            .checkbox(&mut square_shape, "Square Split Axes?")
+                            .changed()
+                        {
+                            *square_split_axes = if square_shape {
+                                BitIndexSet::all()
+                            } else {
+                                BitIndexSet::empty()
+                            };
+
+                            collapse_all = true;
+                        }
                     }
 
                     if collapse_all {
