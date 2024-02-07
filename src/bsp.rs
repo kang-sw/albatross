@@ -229,6 +229,31 @@ impl<T: ElementData> Tree<T> {
         recurse(self, self.root, &mut insert);
     }
 
+    pub fn visit_leaves_with_depth(
+        &self,
+        at: TreeNodeIndex,
+        mut insert: impl FnMut(u16, TreeNodeIndex),
+    ) {
+        fn recurse<T: ElementData>(
+            tree: &Tree<T>,
+            node: TreeNodeIndex,
+            depth: u16,
+            insert: &mut impl FnMut(u16, TreeNodeIndex),
+        ) {
+            match unsafe { tree.nodes.get_unchecked(node) } {
+                TreeNode::Split(split) => {
+                    recurse(tree, split.minus, depth + 1, insert);
+                    recurse(tree, split.plus, depth + 1, insert);
+                }
+                TreeNode::Leaf(_) => {
+                    insert(depth, node);
+                }
+            }
+        }
+
+        recurse(self, at, 0, &mut insert);
+    }
+
     pub fn insert(&mut self, pos: T::Vector, entity: T) -> ElementIndex {
         // NOTE: To not lookup `elem_pool` again after insertion, we cache position
         // firstly at here.
