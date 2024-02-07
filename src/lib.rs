@@ -1,5 +1,6 @@
 #![allow(clippy::bool_comparison)]
 
+pub mod bitindex;
 pub mod bsp;
 pub mod primitive;
 
