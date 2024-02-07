@@ -1,6 +1,10 @@
 use std::collections::{BTreeSet, VecDeque};
 
-use albatross::{bsp, primitive::AabbRect, ControlIntensity};
+use albatross::{
+    bsp::{self, OptimizeParameter},
+    primitive::AabbRect,
+    ControlIntensity,
+};
 use egui::Stroke;
 use nalgebra::Vector2;
 use web_time::Instant;
@@ -91,11 +95,11 @@ impl Default for Model {
 
             stat_max_record: 120,
             tree_optimize: bsp::OptimizeParameter::moderate(4).with(|x| {
-                x.minimum_size = 2.;
+                x.minimum_length = 2.;
                 x.ideal_depth = u16::MAX;
-                x.balance_coeff = ControlIntensity::Moderate;
+                x.balancing = ControlIntensity::Moderate;
                 x.max_collapse_height = u16::MAX;
-                x.node_height_coeff = ControlIntensity::Disable;
+                x.node_height_effect = ControlIntensity::Disable;
             }),
 
             stats: Default::default(),
@@ -120,15 +124,17 @@ impl Model {
             self.stats.pop_front();
         }
 
+        if !self.enable_tick {
+            return;
+        }
+
         self.stats.push_back(Default::default());
 
         let start_time = Instant::now();
 
-        if self.enable_tick {
-            self.calc_force();
-            self.step(dt as _);
-            self.refresh_tree();
-        }
+        self.calc_force();
+        self.step(dt as _);
+        self.refresh_tree();
 
         self.wr_stat().tick = start_time.elapsed().as_secs_f64();
     }
@@ -366,6 +372,11 @@ impl Model {
                 .unwrap();
         }
     }
+
+    pub(crate) fn collapse_all(&mut self) {
+        self.bsp
+            .optimize(&OptimizeParameter::collapse_all(), |_| ());
+    }
 }
 
 /* ---------------------------------------- Rendering --------------------------------------- */
@@ -507,8 +518,6 @@ impl Model {
             };
 
             let pos = to_screen(boid.pos, offset, zoom);
-            p.circle_filled(pos.into(), size * zoom, color);
-
             let arrow_dst = boid.pos + boid.vel.normalize() * arrow_len;
             let mut arrow_dst = to_screen(arrow_dst, offset, zoom);
 
@@ -519,6 +528,13 @@ impl Model {
                 pos.into(),
                 arrow_dst.into(),
                 egui::Stroke { width: 1.0, color },
+            );
+
+            p.circle(
+                pos.into(),
+                size * zoom,
+                color.gamma_multiply(0.5),
+                Stroke { color, width: 1. },
             );
         }
 

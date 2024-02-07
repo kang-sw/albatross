@@ -17,7 +17,7 @@ use crate::primitive::VectorExt;
 use crate::ControlIntensity;
 
 #[non_exhaustive]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SplitStrategy {
     /// Selects the central point of a dataset as the split point by calculating the
     /// average position of all points. This method aims to divide the dataset around a
@@ -84,7 +84,7 @@ pub struct OptimizeParameter {
     /// A higher coefficient increases the effect of the depth limit, promoting a more
     /// compact tree structure by discouraging deep splits and encouraging early
     /// collapses.
-    pub ideal_depth_coeff: ControlIntensity,
+    pub ideal_depth_effect: ControlIntensity,
 
     /// Sets the maximum depth that can be collapsed in a single update cycle, taking
     /// into account the node's balance and the number of child nodes. This parameter
@@ -105,7 +105,7 @@ pub struct OptimizeParameter {
     /// A higher balance coefficient places greater emphasis on achieving a balanced
     /// tree, potentially adjusting optimization strategies to prevent the development
     /// of highly unbalanced branches.
-    pub balance_coeff: ControlIntensity,
+    pub balancing: ControlIntensity,
 
     /// Modifies thresholds for splitting and collapsing based on the node's height in
     /// the tree, to counteract potential imbalances. As nodes are closer to the root,
@@ -117,7 +117,7 @@ pub struct OptimizeParameter {
     /// in cases where spatial distributions might lead to uneven depth utilization,
     /// thereby enhancing the overall efficiency and effectiveness of the BSP tree's
     /// spatial partitioning capabilities.
-    pub node_height_coeff: ControlIntensity,
+    pub node_height_effect: ControlIntensity,
 
     /// Specifies the algorithm used to calculate the split value when a node is divided
     /// into two child nodes. This parameter influences the method used to determine the
@@ -125,8 +125,8 @@ pub struct OptimizeParameter {
     /// tree and the efficiency of spatial queries.
     pub split_strategy: SplitStrategy,
 
-    /// Specifies minimum size
-    pub minimum_size: f64,
+    /// Specifies minimum length of leaf node when splitted.
+    pub minimum_length: f64,
 }
 
 impl OptimizeParameter {
@@ -147,12 +147,12 @@ impl OptimizeParameter {
             split_threshold: split_count,
             collapse_threshold: split_count / 2,
             ideal_depth: 8,
-            ideal_depth_coeff: ControlIntensity::Moderate,
+            ideal_depth_effect: ControlIntensity::Moderate,
             max_collapse_height: 8,
-            balance_coeff: ControlIntensity::Moderate,
-            node_height_coeff: ControlIntensity::Moderate,
+            balancing: ControlIntensity::Moderate,
+            node_height_effect: ControlIntensity::Moderate,
             split_strategy: SplitStrategy::Average,
-            minimum_size: 0.,
+            minimum_length: 0.,
         }
     }
 
@@ -161,12 +161,12 @@ impl OptimizeParameter {
             split_threshold: u32::MAX,
             collapse_threshold: 0,
             ideal_depth: u16::MAX,
-            ideal_depth_coeff: ControlIntensity::Disable,
+            ideal_depth_effect: ControlIntensity::Disable,
             max_collapse_height: u16::MAX,
-            balance_coeff: ControlIntensity::Disable,
-            node_height_coeff: ControlIntensity::Disable,
+            balancing: ControlIntensity::Disable,
+            node_height_effect: ControlIntensity::Disable,
             split_strategy: SplitStrategy::Average,
-            minimum_size: 0.,
+            minimum_length: 0.,
         }
     }
 }
@@ -379,7 +379,7 @@ pub(crate) fn recurse_phase_1<T: ElementData>(
                     break 'collapse true;
                 }
 
-                let balance_coeff = params.balance_coeff as usize;
+                let balance_coeff = params.balancing as usize;
                 let unbalanced = if balance_coeff > 0 {
                     let unbalance_threshold = UNBALANCE_THRES_PCNT[balance_coeff - 1];
                     let diff = cnt1.abs_diff(cnt2);
@@ -395,9 +395,9 @@ pub(crate) fn recurse_phase_1<T: ElementData>(
                     let threshold = {
                         let over_depth = depth.saturating_sub(params.ideal_depth);
                         params.collapse_threshold as f32
-                            * OVER_DEPTH_INTENSITY[params.ideal_depth_coeff as usize]
+                            * OVER_DEPTH_INTENSITY[params.ideal_depth_effect as usize]
                                 .powf(over_depth as _)
-                            * HEIGHT_INTENSITY[params.node_height_coeff as usize].powf(height as _)
+                            * HEIGHT_INTENSITY[params.node_height_effect as usize].powf(height as _)
                     } as usize;
 
                     // Increment collapse threshold
@@ -539,7 +539,7 @@ pub(crate) fn recurse_phase_2<T: ElementData>(
             let over_depth = depth.saturating_sub(params.ideal_depth);
             let thres = (params.split_threshold as f32)
                 .tap_mut(|x| {
-                    let index = params.ideal_depth_coeff as usize;
+                    let index = params.ideal_depth_effect as usize;
                     *x *= OVER_DEPTH_INTENSITY[index].powf(over_depth as f32)
                 })
                 .pipe(|x| x as usize);
@@ -581,17 +581,23 @@ pub(crate) fn recurse_phase_2<T: ElementData>(
                 .max_by(|&a, &b| variant[a].partial_cmp(&variant[b]).unwrap())
                 .unwrap();
 
-            if bound.length(axis).to_f64() <= (params.minimum_size * 2.).max(1e-6) {
+            if bound.length(axis).to_f64() <= (params.minimum_length * 2.).max(1e-6) {
                 return;
             }
 
-            let split_min = bound.min()[axis].to_f64() + params.minimum_size;
-            let split_max = bound.max()[axis].to_f64() - params.minimum_size;
+            let split_min = bound.min()[axis].to_f64() + params.minimum_length;
+            let split_max = bound.max()[axis].to_f64() - params.minimum_length;
 
             let split_at = match params.split_strategy {
                 SplitStrategy::Average => avg[axis],
-                SplitStrategy::SpatialMedian => todo!("Weighted average of distance from center"),
-                SplitStrategy::ClusterMedian => todo!("Weighted average of distance from center"),
+                SplitStrategy::SpatialMedian => {
+                    avg[axis]
+                    // todo!("Weighted average of distance from center")
+                }
+                SplitStrategy::ClusterMedian => {
+                    avg[axis]
+                    // todo!("Weighted average of distance from center")
+                }
             }
             .clamp(split_min, split_max);
 

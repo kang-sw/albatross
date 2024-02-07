@@ -1,6 +1,8 @@
 mod boids;
 
+use albatross::bsp::OptimizeParameter;
 use egui::RichText;
+use web_time::Instant;
 
 #[derive(Default)]
 pub struct TemplateApp {
@@ -9,6 +11,7 @@ pub struct TemplateApp {
     render_opt: boids::RenderOption,
     spawning_predator: bool,
     once: std::sync::OnceLock<()>,
+    tick_time: f64,
 }
 
 impl TemplateApp {
@@ -27,6 +30,8 @@ impl eframe::App for TemplateApp {
         });
 
         ctx.request_repaint();
+
+        let start_time = Instant::now();
 
         // Simulate boids
         self.model.tick();
@@ -92,29 +97,13 @@ impl eframe::App for TemplateApp {
                 }
             });
 
-            if ui
-                .selectable_label(
-                    self.spawning_predator,
-                    format!(
-                        "Spawning {}",
-                        if self.spawning_predator {
-                            "Predetor"
-                        } else {
-                            "Boid"
-                        }
-                    ),
-                )
-                .clicked()
-            {
-                self.spawning_predator = !self.spawning_predator;
-            }
-
             egui::CollapsingHeader::new("Stats")
                 .default_open(true)
                 .show(ui, |ui| {
                     let stat = self.model.stats().back().unwrap();
                     let label_value_pairs = [
                         ("Count", stat.elem_count.to_string()),
+                        ("All", format!("{:_>7.3} ms", self.tick_time * 1000.)),
                         ("Tick", format!("{:_>7.3} ms", stat.tick * 1000.)),
                         ("avg.Query", format!("{:_>7.3} µs", stat.avg_query * 1e6)),
                         ("avg.Step", format!("{:_>7.3} µs", stat.avg_step * 1e6)),
@@ -133,6 +122,7 @@ impl eframe::App for TemplateApp {
             egui::CollapsingHeader::new("Boids")
                 .default_open(true)
                 .show(ui, |ui| {
+                    ui.checkbox(&mut self.spawning_predator, "Spawn Predator?");
                     ui.checkbox(&mut self.model.enable_tick, "Enable Simulation?");
 
                     let mut speed = self.model.tick_delta * 60.0;
@@ -165,11 +155,105 @@ impl eframe::App for TemplateApp {
             egui::CollapsingHeader::new("Bsp")
                 .default_open(true)
                 .show(ui, |ui| {
-                    ui.checkbox(&mut self.render_opt.draw_grid, "Draw Grid?");
+                    ui.horizontal(|ui| {
+                        if ui.button("Collapse All!").clicked() {
+                            self.model.collapse_all();
+                        }
+
+                        ui.checkbox(&mut self.render_opt.draw_grid, "Draw Grid?");
+                    });
+
+                    let OptimizeParameter {
+                        split_threshold,
+                        collapse_threshold,
+                        ideal_depth,
+                        ideal_depth_effect,
+                        max_collapse_height,
+                        balancing,
+                        node_height_effect: node_height_collapse_effect,
+                        split_strategy,
+                        minimum_length: minimum_size,
+                        ..
+                    } = &mut self.model.tree_optimize;
+
+                    let label_params = [
+                        ("Balancing", balancing),
+                        ("Node Height Effect", node_height_collapse_effect),
+                        ("Ideal Depth Effect", ideal_depth_effect),
+                    ];
+
+                    for (label, param) in label_params {
+                        ui.columns(2, |cols| {
+                            cols[0].label(label);
+
+                            cols[1].columns(3, |cols| {
+                                use albatross::ControlIntensity::*;
+
+                                cols[0].selectable_value(param, Disable, "Disable");
+                                cols[1].selectable_value(param, Moderate, "Moderate");
+                                cols[2].selectable_value(param, Extreme, "Extreme");
+                            });
+                        });
+                    }
+
+                    let label_value_pairs = [
+                        ("Split Threshold", split_threshold),
+                        ("Collapse Threshold", collapse_threshold),
+                    ];
+
+                    for (label, value) in label_value_pairs {
+                        ui.columns(2, |cols| {
+                            cols[0].label(label);
+                            cols[1].add(egui::DragValue::new(value).speed(1).clamp_range(0..=100));
+                        });
+                    }
+
+                    let label_value_pairs = [
+                        ("Ideal Depth", ideal_depth),
+                        ("Max Collapse Height", max_collapse_height),
+                    ];
+
+                    for (label, value) in label_value_pairs {
+                        ui.columns(2, |cols| {
+                            cols[0].label(label);
+                            cols[1].add(egui::DragValue::new(value).speed(1).clamp_range(0..=100));
+                        });
+                    }
+
+                    ui.columns(2, |cols| {
+                        use albatross::bsp::SplitStrategy::*;
+
+                        cols[0].label("Split Strategy");
+                        cols[1].columns(3, |cols| {
+                            cols[0].selectable_value(split_strategy, Average, "Average");
+                            cols[1].selectable_value(
+                                split_strategy,
+                                ClusterMedian,
+                                "Cluster Median",
+                            );
+                            cols[2].selectable_value(
+                                split_strategy,
+                                SpatialMedian,
+                                "Spatial Median",
+                            );
+                        });
+                    });
+
+                    let label_value_pairs = [("Minimum Size", minimum_size)];
+
+                    for (label, value) in label_value_pairs {
+                        ui.columns(2, |cols| {
+                            cols[0].label(label);
+                            cols[1]
+                                .add(egui::DragValue::new(value).speed(0.01).clamp_range(0..=100));
+                        });
+                    }
                 });
 
             guidance(ui);
         });
+
+        self.tick_time = start_time.elapsed().as_secs_f64();
     }
 }
 
@@ -177,7 +261,7 @@ fn guidance(ui: &mut egui::Ui) {
     ui.separator();
 
     ui.label("Right click and drag to spawn boids.");
-    ui.label("Tap to switch boid type.");
+    ui.label("Tap t~o switch boid type.");
     ui.label("Left click and drag to pan.");
     ui.label("Wheel, or control + wheel to zoom.");
 
