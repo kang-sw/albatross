@@ -84,9 +84,13 @@ impl eframe::App for TemplateApp {
         });
 
         egui::Window::new("Boid").show(ctx, |ui| {
-            if ui.input(|i| i.key_pressed(egui::Key::Tab)) {
-                self.spawning_predator = !self.spawning_predator;
-            }
+            ui.input(|i| {
+                if i.key_pressed(egui::Key::Tab) {
+                    self.spawning_predator = !self.spawning_predator;
+                } else if i.key_pressed(egui::Key::Space) {
+                    self.model.enable_tick = !self.model.enable_tick;
+                }
+            });
 
             if ui
                 .selectable_label(
@@ -129,6 +133,8 @@ impl eframe::App for TemplateApp {
             egui::CollapsingHeader::new("Boids")
                 .default_open(true)
                 .show(ui, |ui| {
+                    ui.checkbox(&mut self.model.enable_tick, "Enable Simulation?");
+
                     let mut speed = self.model.tick_delta * 60.0;
                     let label_param_pairs = [
                         ("Simulation Speed", &mut speed),

@@ -39,6 +39,7 @@ pub struct Model {
     rand: fastrand::Rng,
 
     pub tick_delta: f32,
+    pub enable_tick: bool,
 
     pub area_radius: f32,
     pub view_radius: f32,
@@ -77,6 +78,7 @@ impl Default for Model {
             rand: fastrand::Rng::with_seed(0),
 
             tick_delta: 1. / 60.,
+            enable_tick: true,
 
             area_radius: 60.,
             view_radius: 2.,
@@ -122,9 +124,11 @@ impl Model {
 
         let start_time = Instant::now();
 
-        self.calc_force();
-        self.step(dt as _);
-        self.refresh_tree();
+        if self.enable_tick {
+            self.calc_force();
+            self.step(dt as _);
+            self.refresh_tree();
+        }
 
         self.wr_stat().tick = start_time.elapsed().as_secs_f64();
     }
@@ -428,6 +432,59 @@ impl Model {
                         Stroke { width: 1.0, color },
                     );
                 });
+
+            // Highlight hierarchy on cursor position.
+            'highlight_cursor: {
+                let Some(cursor_pos) = ui.input(|i| i.pointer.interact_pos()) else {
+                    break 'highlight_cursor;
+                };
+
+                let cursor_pos = to_world(cursor_pos, offset, zoom);
+                let mut all_rect = AabbRect::new_circular([0., 0.], self.area_radius);
+
+                if !all_rect.contains(&cursor_pos) {
+                    break 'highlight_cursor;
+                }
+
+                let draw_rect = |rect: &AabbRect<[f32; 2]>, color: egui::Color32| {
+                    let min = to_screen((*rect.min()).into(), offset, zoom);
+                    let max = to_screen((*rect.max()).into(), offset, zoom);
+
+                    p.rect_stroke(
+                        egui::Rect::from_min_max(min.into(), max.into()),
+                        0.0,
+                        Stroke { width: 2.0, color },
+                    );
+                };
+
+                let mut rects = Vec::new();
+
+                let node = self.bsp.query_with_hierarchy(
+                    self.bsp.root(),
+                    &cursor_pos,
+                    |split, is_plus| {
+                        rects.push(all_rect);
+
+                        if is_plus {
+                            all_rect.split_plus(split.axis, split.value);
+                        } else {
+                            all_rect.split_minus(split.axis, split.value);
+                        }
+                    },
+                );
+
+                let mut leaf_bound = *self.bsp.leaf_bound(node);
+                leaf_bound.intersect(&AabbRect::new_circular([0., 0.], self.area_radius));
+
+                for (_depth, rect) in rects.into_iter().enumerate().rev() {
+                    let blue = 55 + (_depth * 40).min(200) as u8;
+                    let color = egui::Color32::from_rgb(23, 38, blue);
+
+                    draw_rect(&rect, color);
+                }
+
+                draw_rect(&leaf_bound, egui::Color32::WHITE);
+            }
         }
 
         // Draw cage
