@@ -7,7 +7,7 @@ pub struct TemplateApp {
     // Example stuff:
     model: boids::Model,
     render_opt: boids::RenderOption,
-    spawning_predetor: bool,
+    spawning_predator: bool,
     once: std::sync::OnceLock<()>,
 }
 
@@ -35,14 +35,18 @@ impl eframe::App for TemplateApp {
             // Render boids / grids
             let resp = self.model.draw(ui, &self.render_opt);
 
-            if resp.dragged_by(egui::PointerButton::Secondary) {
+            if resp.dragged_by(egui::PointerButton::Secondary)
+                || resp.clicked_by(egui::PointerButton::Secondary)
+            {
+                let was_click = resp.clicked_by(egui::PointerButton::Secondary);
+
                 let pos = ctx.input(|i| i.pointer.interact_pos().unwrap());
                 let pos = boids::to_world(pos, self.render_opt.offset, self.render_opt.zoom);
 
                 self.model.spawn_boids(
-                    if self.spawning_predetor { 1 } else { 10 },
+                    if self.spawning_predator { 1 } else { 10 } * if was_click { 10 } else { 1 },
                     pos,
-                    self.spawning_predetor,
+                    self.spawning_predator,
                 );
             }
             if resp.dragged_by(egui::PointerButton::Primary) {
@@ -50,27 +54,46 @@ impl eframe::App for TemplateApp {
                 self.render_opt.offset[0] += delta.x;
                 self.render_opt.offset[1] += delta.y;
             }
-            if resp.hovered() {
+
+            let mut new_zoom = if resp.hovered() {
                 let zoom = ctx.input(|i| i.zoom_delta());
-                self.render_opt.zoom *= zoom;
+                (zoom != 1.).then_some(self.render_opt.zoom * zoom)
+            } else {
+                None
+            };
+
+            if new_zoom.is_none() {
+                let delta = ctx.input(|i| i.raw_scroll_delta.y);
+                if delta != 0.0 {
+                    new_zoom = Some(self.render_opt.zoom.powf(1. + delta / 5000.0));
+                }
             }
-            if resp.dragged_by(egui::PointerButton::Middle) {
-                let delta = resp.drag_delta();
-                self.render_opt.zoom *= 1.0 + (-delta.y + delta.x) / 400.0;
+
+            if let Some(zoom) = new_zoom {
+                let cursor_pos = ctx.input(|i| i.pointer.interact_pos().unwrap_or_default());
+
+                // Cursor position's world position remain same before/after zooming
+                let before_world =
+                    boids::to_world(cursor_pos, self.render_opt.offset, self.render_opt.zoom);
+                let after_world = boids::to_world(cursor_pos, self.render_opt.offset, zoom);
+
+                self.render_opt.offset[0] -= (before_world[0] - after_world[0]) * zoom;
+                self.render_opt.offset[1] -= (before_world[1] - after_world[1]) * zoom;
+                self.render_opt.zoom = zoom;
             }
         });
 
         egui::Window::new("Boid").show(ctx, |ui| {
             if ui.input(|i| i.key_pressed(egui::Key::Tab)) {
-                self.spawning_predetor = !self.spawning_predetor;
+                self.spawning_predator = !self.spawning_predator;
             }
 
             if ui
                 .selectable_label(
-                    self.spawning_predetor,
+                    self.spawning_predator,
                     format!(
                         "Spawning {}",
-                        if self.spawning_predetor {
+                        if self.spawning_predator {
                             "Predetor"
                         } else {
                             "Boid"
@@ -79,7 +102,7 @@ impl eframe::App for TemplateApp {
                 )
                 .clicked()
             {
-                self.spawning_predetor = !self.spawning_predetor;
+                self.spawning_predator = !self.spawning_predator;
             }
 
             egui::CollapsingHeader::new("Stats")
@@ -120,7 +143,7 @@ impl eframe::App for TemplateApp {
                     let label_param_pairs = [
                         ("Simulation Speed", &mut speed),
                         ("Max Speed", &mut self.model.max_speed),
-                        ("Predetor Avoidance", &mut self.model.predetor_avoidance),
+                        ("Predator Avoidance", &mut self.model.predator_avoidance),
                         ("Area Radius", &mut self.model.area_radius),
                         ("View Radius", &mut self.model.view_radius),
                         ("Near Radius", &mut self.model.near_radius),
@@ -155,20 +178,23 @@ impl eframe::App for TemplateApp {
 fn guidance(ui: &mut egui::Ui) {
     ui.separator();
 
-    ui.label("Write click and drag to spawn boids.");
+    ui.label("Right click and drag to spawn boids.");
     ui.label("Tap to switch boid type.");
     ui.label("Left click and drag to pan.");
-    ui.label("Middle click and drag, or control + wheel to zoom.");
+    ui.label("Wheel, or control + wheel to zoom.");
 
     ui.separator();
 
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
         ui.label("Author: ");
+        ui.hyperlink_to("kang-sw", "https://github.com/kang-sw");
+        ui.label("  (");
         ui.hyperlink_to(
-            "kang-sw",
+            "source code",
             "https://github.com/kang-sw/mylib/tree/master/examples/bsp-ui",
         );
+        ui.label(")");
     });
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
