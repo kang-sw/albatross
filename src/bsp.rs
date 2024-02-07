@@ -87,20 +87,29 @@ impl<T: ElementData> Tree<T> {
 
     /// It must succeeds, since every region is covered by root.
     pub fn query(&self, pos: &T::Vector) -> TreeNodeIndex {
-        let mut index = self.root; // Starts from root
+        self.query_with_hierarchy(self.root(), pos, |_, _| {})
+    }
+
+    /// # Panics
+    ///
+    /// If `index` is invalid.
+    pub fn query_with_hierarchy(
+        &self,
+        mut index: TreeNodeIndex,
+        pos: &T::Vector,
+        mut visit_trail: impl FnMut(&TreeNodeSplit<T>, bool), // is plus?
+    ) -> TreeNodeIndex {
+        assert!(self.nodes.contains_key(index));
 
         loop {
-            match *unsafe { self.nodes.get_unchecked(index) } {
-                TreeNode::Split(TreeNodeSplit {
-                    axis,
-                    value,
-                    minus,
-                    plus,
-                }) => {
-                    if pos[axis] < value {
-                        index = minus;
+            match unsafe { self.nodes.get_unchecked(index) } {
+                TreeNode::Split(split) => {
+                    if pos[split.axis] < split.value {
+                        index = split.minus;
+                        visit_trail(split, false);
                     } else {
-                        index = plus;
+                        index = split.plus;
+                        visit_trail(split, true);
                     }
                 }
                 TreeNode::Leaf(..) => return index,
@@ -123,9 +132,11 @@ impl<T: ElementData> Tree<T> {
         })
     }
 
-    // TODO: `query_line`
+    // TODO: `trace_line`
 
-    // TODO: `query_line_thick`
+    // TODO: `trace_line_thick`
+
+    // TODO: `trace_sphere`
 
     pub fn root(&self) -> TreeNodeIndex {
         self.root
