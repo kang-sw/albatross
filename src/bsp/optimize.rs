@@ -581,7 +581,7 @@ pub(crate) fn recurse_phase_2<T: ElementData>(
                 .max_by(|&a, &b| variant[a].partial_cmp(&variant[b]).unwrap())
                 .unwrap();
 
-            if bound.length(axis).to_f64() <= params.minimum_size * 2. + 1e-6 {
+            if bound.length(axis).to_f64() <= (params.minimum_size * 2.).max(1e-6) {
                 return;
             }
 
