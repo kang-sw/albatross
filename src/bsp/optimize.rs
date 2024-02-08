@@ -137,6 +137,11 @@ pub struct OptimizeParameter {
     /// For axes specified in this set, the final variance on choosing axis to split is
     /// amplified by the axis length ratio to make the space split square as possible.
     pub square_split_axes: BitIndexSet<1>,
+
+    /// Specifies the height at which the tree should start balancing. This is useful for
+    /// trees that are expected to be very large, as it can be beneficial to allow the
+    /// tree to grow to a certain size before starting to balance it.
+    pub balancing_start_height: u16,
 }
 
 impl OptimizeParameter {
@@ -161,10 +166,11 @@ impl OptimizeParameter {
             max_collapse_height: 8,
             balancing: ControlIntensity::Moderate,
             node_height_effect: ControlIntensity::Moderate,
-            split_strategy: SplitStrategy::Average,
+            split_strategy: SplitStrategy::ClusterMedian,
             minimum_length: 0.,
             suboptimal_split_count: 1,
             square_split_axes: BitIndexSet::empty(),
+            balancing_start_height: 4,
         }
     }
 
@@ -181,6 +187,7 @@ impl OptimizeParameter {
             minimum_length: 0.,
             suboptimal_split_count: 1,
             square_split_axes: BitIndexSet::empty(),
+            balancing_start_height: 0,
         }
     }
 }
@@ -334,7 +341,7 @@ pub(crate) struct P1Report {
 // Balance evaluation => 0 at perfect balance. For moderate
 // config, unbalance is allowed until 80%. For extreme config,
 // it's 40%.
-pub(crate) const UNBALANCE_THRES_PCNT: [usize; 2] = [80, 40];
+pub(crate) const UNBALANCE_THRES_PCNT: [usize; 2] = [80, 50];
 
 // The tree becomes easy to be collapsed
 pub(crate) const HEIGHT_INTENSITY: [f32; 3] = [1.00, 1.04, 1.15];
@@ -388,7 +395,7 @@ pub(crate) fn recurse_phase_1<T: Element>(
 
                 // If both children are leaf node, do not evaluate balance; as it's highly
                 // likely just repeat merge/split over and over.
-                let disable_balance = height == 0;
+                let disable_balance = height < params.balancing_start_height;
 
                 let balance_coeff = params.balancing as usize;
                 let unbalanced = if !disable_balance && balance_coeff > 0 {
@@ -553,7 +560,8 @@ pub(crate) fn recurse_phase_2<T: Element>(
                     let index = params.ideal_depth_effect as usize;
                     *x *= OVER_DEPTH_INTENSITY[index].powf(over_depth as f32)
                 })
-                .pipe(|x| x as usize);
+                .pipe(|x| x as usize)
+                .max(1); // Don't split for single element ... infinite loop!
 
             if (len as usize) <= thres {
                 //            ^^ Makes zero always return.

@@ -417,6 +417,88 @@ impl Model {
         let zoom = (*zoom).max(0.001);
 
         if *draw_grid {
+            // Highlight hierarchy on cursor position.
+            'highlight_cursor: {
+                let Some(cursor_pos) = ui.input(|i| i.pointer.interact_pos()) else {
+                    break 'highlight_cursor;
+                };
+
+                let cursor_pos = to_world(cursor_pos, offset, zoom);
+                let mut all_rect = AabbRect::new_circular([0., 0.], self.area_radius);
+
+                if !all_rect.contains(&cursor_pos) {
+                    break 'highlight_cursor;
+                }
+
+                let convert_rect = |rect: &AabbRect<[f32; 2]>| {
+                    let min = to_screen((*rect.min()).into(), offset, zoom);
+                    let max = to_screen((*rect.max()).into(), offset, zoom);
+
+                    egui::Rect::from_min_max(min.into(), max.into())
+                };
+                let draw_rect = |rect: &AabbRect<[f32; 2]>, color: egui::Color32| {
+                    p.rect_stroke(convert_rect(rect), 0.0, Stroke { width: 3.0, color });
+                };
+
+                let mut rects = Vec::new();
+                let mut other_rects = Vec::new();
+
+                let node = self.bsp.query_with_hierarchy(
+                    self.bsp.root(),
+                    &cursor_pos,
+                    |split, is_plus| {
+                        let mut other = all_rect;
+
+                        if is_plus {
+                            all_rect.split_plus(split.axis, split.value);
+                            other.split_minus(split.axis, split.value);
+                        } else {
+                            all_rect.split_minus(split.axis, split.value);
+                            other.split_plus(split.axis, split.value);
+                        }
+
+                        rects.push(all_rect);
+                        other_rects.push(other);
+                    },
+                );
+
+                let mut leaf_bound = *self.bsp.leaf_bound(node);
+                leaf_bound.intersect(&AabbRect::new_circular([0., 0.], self.area_radius));
+
+                for (base, rect) in rects.iter().enumerate() {
+                    const PALLETE: &[[u8; 3]] = &[
+                        [0, 255, 0],
+                        [0, 255, 255],
+                        [0, 0, 255],
+                        [255, 0, 255],
+                        [255, 255, 0],
+                        [255, 0, 0],
+                    ];
+                    let [r, g, b] = PALLETE[base % PALLETE.len()];
+                    let color = egui::Color32::from_rgb(r, g, b).gamma_multiply(0.1);
+
+                    p.rect_filled(convert_rect(rect), 0., color);
+                }
+
+                other_rects.push(leaf_bound);
+
+                for (depth, &rect) in other_rects.iter().enumerate().rev() {
+                    let center = rect.center();
+                    let mut size = rect.length(0).min(rect.length(1)) / 8.;
+                    size *= zoom;
+
+                    p.text(
+                        to_screen(center.into(), offset, zoom).into(),
+                        egui::Align2::CENTER_CENTER,
+                        format!("{}", (depth + 1).min(other_rects.len() - 1)),
+                        egui::FontId::proportional(size.clamp(14., 36.)),
+                        egui::Color32::WHITE,
+                    );
+                }
+
+                draw_rect(&leaf_bound, egui::Color32::WHITE);
+            }
+
             self.bsp
                 .visit_leaves_with_depth(self.bsp.root(), |depth, leaf| {
                     let bound = self.bsp.leaf_bound(leaf);
@@ -437,8 +519,14 @@ impl Model {
                     p.debug_text(
                         min.into(),
                         egui::Align2::LEFT_TOP,
-                        color,
-                        format!("{:?}/{}", depth, self.bsp.leaf_len(leaf)),
+                        color.linear_multiply(2.),
+                        format!(
+                            "{:?}/{} id_{}v{}",
+                            depth,
+                            self.bsp.leaf_len(leaf),
+                            leaf.0.as_ffi() & !0u32 as u64,
+                            leaf.0.as_ffi() >> 32
+                        ),
                     );
 
                     p.rect_stroke(
@@ -447,59 +535,6 @@ impl Model {
                         Stroke { width: 1.0, color },
                     );
                 });
-
-            // Highlight hierarchy on cursor position.
-            'highlight_cursor: {
-                let Some(cursor_pos) = ui.input(|i| i.pointer.interact_pos()) else {
-                    break 'highlight_cursor;
-                };
-
-                let cursor_pos = to_world(cursor_pos, offset, zoom);
-                let mut all_rect = AabbRect::new_circular([0., 0.], self.area_radius);
-
-                if !all_rect.contains(&cursor_pos) {
-                    break 'highlight_cursor;
-                }
-
-                let draw_rect = |rect: &AabbRect<[f32; 2]>, color: egui::Color32| {
-                    let min = to_screen((*rect.min()).into(), offset, zoom);
-                    let max = to_screen((*rect.max()).into(), offset, zoom);
-
-                    p.rect_stroke(
-                        egui::Rect::from_min_max(min.into(), max.into()),
-                        0.0,
-                        Stroke { width: 2.0, color },
-                    );
-                };
-
-                let mut rects = Vec::new();
-
-                let node = self.bsp.query_with_hierarchy(
-                    self.bsp.root(),
-                    &cursor_pos,
-                    |split, is_plus| {
-                        rects.push(all_rect);
-
-                        if is_plus {
-                            all_rect.split_plus(split.axis, split.value);
-                        } else {
-                            all_rect.split_minus(split.axis, split.value);
-                        }
-                    },
-                );
-
-                let mut leaf_bound = *self.bsp.leaf_bound(node);
-                leaf_bound.intersect(&AabbRect::new_circular([0., 0.], self.area_radius));
-
-                for (_depth, rect) in rects.into_iter().enumerate().rev() {
-                    let blue = 55 + (_depth * 40).min(200) as u8;
-                    let color = egui::Color32::from_rgb(23, 38, blue);
-
-                    draw_rect(&rect, color);
-                }
-
-                draw_rect(&leaf_bound, egui::Color32::WHITE);
-            }
         }
 
         // Draw cage
