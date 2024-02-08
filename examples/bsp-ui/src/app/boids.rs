@@ -465,6 +465,8 @@ impl Model {
                 let mut leaf_bound = *self.bsp.leaf_bound(node);
                 leaf_bound.intersect(&AabbRect::new_circular([0., 0.], self.area_radius));
 
+                rects.pop();
+
                 for (base, rect) in rects.iter().enumerate() {
                     const PALLETE: &[[u8; 3]] = &[
                         [0, 255, 0],
@@ -475,7 +477,7 @@ impl Model {
                         [255, 0, 0],
                     ];
                     let [r, g, b] = PALLETE[base % PALLETE.len()];
-                    let color = egui::Color32::from_rgb(r, g, b).gamma_multiply(0.1);
+                    let color = egui::Color32::from_rgb(r, g, b).gamma_multiply(0.04);
 
                     p.rect_filled(convert_rect(rect), 0., color);
                 }
