@@ -386,9 +386,9 @@ pub(crate) fn recurse_phase_1<T: Element>(
                     break 'collapse true;
                 }
 
-                // TODO: On specific circumstance where 'empty shape' is intentionally created ...
-                // - Consider when to disable balance!
-                let disable_balance = false;
+                // If both children are leaf node, do not evaluate balance; as it's highly
+                // likely just repeat merge/split over and over.
+                let disable_balance = height == 0;
 
                 let balance_coeff = params.balancing as usize;
                 let unbalanced = if !disable_balance && balance_coeff > 0 {
@@ -560,6 +560,17 @@ pub(crate) fn recurse_phase_2<T: Element>(
                 return;
             }
 
+            let mut bound_lengths = T::Vector::zero_f64();
+            let bound_length_thr = (params.minimum_length * 2.).max(1e-6);
+            for i in 0..T::Vector::D {
+                bound_lengths[i] = bound.length(i).to_f64();
+            }
+
+            // If all bound lengths are too short, we can't split this node.
+            if (0..T::Vector::D).all(|i| bound_lengths[i] <= bound_length_thr) {
+                return;
+            }
+
             // # Calculate split point
             // 1. Average
             // 2. StdVar per axes
@@ -588,11 +599,6 @@ pub(crate) fn recurse_phase_2<T: Element>(
                         val
                     });
 
-            let mut bound_lengths = T::Vector::zero_f64();
-            for i in 0..T::Vector::D {
-                bound_lengths[i] = bound.length(i).to_f64();
-            }
-
             'square_split: {
                 if params.square_split_axes.is_empty() {
                     break 'square_split;
@@ -618,14 +624,17 @@ pub(crate) fn recurse_phase_2<T: Element>(
             }
 
             let mut axis = None;
-            let threshold = (params.minimum_length * 2.).max(1e-6);
 
             for _ in 0..(params.suboptimal_split_count + 1).min(T::Vector::D as u8) {
                 let axis_max = (0..T::Vector::D)
                     .max_by(|&a, &b| variant[a].partial_cmp(&variant[b]).unwrap())
                     .unwrap();
 
-                if bound_lengths[axis_max].to_f64() <= threshold {
+                // NOTE: We re-evaluate bound lengths per selected axis once more, rather
+                // than setting it earlier when we first evaluate bound lengths above.
+                // This is to select the axis that has largest stdvar even it's too short.
+                // If we don't, the `suboptimal_split_count` will be meaningless.
+                if bound_lengths[axis_max].to_f64() <= bound_length_thr {
                     variant[axis_max] = f64::MIN;
                     continue;
                 }
