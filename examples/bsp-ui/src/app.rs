@@ -185,6 +185,8 @@ impl eframe::App for TemplateApp {
                         minimum_length: minimum_size,
                         suboptimal_split_count: short_axis_fallback,
                         square_split_axes,
+                        snap_size,
+                        balancing_start_height,
                         ..
                     } = &mut self.model.tree_optimize;
 
@@ -225,6 +227,7 @@ impl eframe::App for TemplateApp {
                         ("Ideal Depth", ideal_depth),
                         ("Max Collapse Height", max_collapse_height),
                         ("Axis Find Fallback", &mut short_axis_fallback_u16),
+                        ("Balancing Start Height", balancing_start_height),
                     ];
 
                     for (label, value) in label_value_pairs {
@@ -260,7 +263,8 @@ impl eframe::App for TemplateApp {
                             collapse_all = true;
                         }
                     });
-                    let label_value_pairs = [("Minimum Size", minimum_size)];
+                    let label_value_pairs =
+                        [("Minimum Size", minimum_size), ("Snap Size", snap_size)];
 
                     for (label, value) in label_value_pairs {
                         ui.columns(2, |cols| {

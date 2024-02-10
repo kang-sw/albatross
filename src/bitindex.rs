@@ -16,7 +16,9 @@ impl<const N: usize> BitIndexSet<N> {
     }
 
     pub fn len(&self) -> usize {
-        self.iter().count()
+        self.bits
+            .into_iter()
+            .fold(0, |acc, x| acc + x.count_ones() as usize)
     }
 
     pub const fn all() -> Self {

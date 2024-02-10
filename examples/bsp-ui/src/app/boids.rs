@@ -127,14 +127,14 @@ impl Model {
     }
 
     pub fn tick(&mut self) {
-        let dt = self.tick_delta;
+        let dt = if self.enable_tick {
+            self.tick_delta
+        } else {
+            0.
+        };
 
         if self.stats.len() >= self.stat_max_record {
             self.stats.pop_front();
-        }
-
-        if !self.enable_tick {
-            return;
         }
 
         self.stats.push_back(Default::default());

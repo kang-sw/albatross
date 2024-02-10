@@ -142,6 +142,9 @@ pub struct OptimizeParameter {
     /// trees that are expected to be very large, as it can be beneficial to allow the
     /// tree to grow to a certain size before starting to balance it.
     pub balancing_start_height: u16,
+
+    /// Specifies the size of the snap grid used to align split points and node bounds
+    pub snap_size: f64,
 }
 
 impl OptimizeParameter {
@@ -171,6 +174,7 @@ impl OptimizeParameter {
             suboptimal_split_count: 1,
             square_split_axes: BitIndexSet::empty(),
             balancing_start_height: 4,
+            snap_size: 0.,
         }
     }
 
@@ -188,6 +192,7 @@ impl OptimizeParameter {
             suboptimal_split_count: 1,
             square_split_axes: BitIndexSet::empty(),
             balancing_start_height: 0,
+            snap_size: 0.,
         }
     }
 }
@@ -560,8 +565,7 @@ pub(crate) fn recurse_phase_2<T: Element>(
                     let index = params.ideal_depth_effect as usize;
                     *x *= OVER_DEPTH_INTENSITY[index].powf(over_depth as f32)
                 })
-                .pipe(|x| x as usize)
-                .max(1); // Don't split for single element ... infinite loop!
+                .pipe(|x| x as usize);
 
             if (len as usize) <= thres {
                 //            ^^ Makes zero always return.
@@ -656,7 +660,7 @@ pub(crate) fn recurse_phase_2<T: Element>(
             let split_min = bound.min()[axis].to_f64() + params.minimum_length;
             let split_max = bound.max()[axis].to_f64() - params.minimum_length;
 
-            let split_at = match params.split_strategy {
+            let mut split_at = match params.split_strategy {
                 SplitStrategy::Average => avg[axis],
                 ref x @ (SplitStrategy::SpatialMedian | SplitStrategy::ClusterMedian) => {
                     let positive_weight = *x == SplitStrategy::SpatialMedian;
@@ -678,8 +682,15 @@ pub(crate) fn recurse_phase_2<T: Element>(
 
                     wp / w
                 }
+            };
+
+            // Apply snap size.
+            if params.snap_size > 0. {
+                split_at = (split_at / params.snap_size).round() * params.snap_size;
             }
-            .clamp(split_min, split_max);
+
+            // Limit split_at within bound
+            split_at = split_at.clamp(split_min, split_max);
 
             let split_at = <T::Vector as Vector>::Num::from_f64(split_at);
 
