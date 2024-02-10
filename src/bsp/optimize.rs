@@ -642,13 +642,12 @@ pub(crate) fn recurse_phase_2<T: Element>(
                 // than setting it earlier when we first evaluate bound lengths above.
                 // This is to select the axis that has largest stdvar even it's too short.
                 // If we don't, the `suboptimal_split_count` will be meaningless.
-                if bound_lengths[axis_max].to_f64() <= bound_length_thr {
-                    variant[axis_max] = f64::MIN;
-                    continue;
+                if bound_lengths[axis_max].to_f64() > bound_length_thr {
+                    axis = Some(axis_max);
+                    break;
                 }
 
-                axis = Some(axis_max);
-                break;
+                variant[axis_max] = f64::MIN;
             }
 
             // We couldn't find any suitable axis.
