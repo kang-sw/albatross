@@ -346,7 +346,7 @@ pub(crate) struct P1Report {
 // Balance evaluation => 0 at perfect balance. For moderate
 // config, unbalance is allowed until 80%. For extreme config,
 // it's 40%.
-pub(crate) const BALANCE_THRES: [f32; 3] = [f32::INFINITY, 0.8, 0.3];
+pub(crate) const BALANCE_THRES: [f32; 3] = [f32::INFINITY, 0.7, 0.3];
 
 // The tree becomes easy to be collapsed
 pub(crate) const HEIGHT_INTENSITY: [f32; 3] = [1.00, 1.04, 1.15];
