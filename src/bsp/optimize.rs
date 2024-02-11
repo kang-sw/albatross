@@ -346,7 +346,7 @@ pub(crate) struct P1Report {
 // Balance evaluation => 0 at perfect balance. For moderate
 // config, unbalance is allowed until 80%. For extreme config,
 // it's 40%.
-pub(crate) const UNBALANCE_THRES_PCNT: [usize; 2] = [80, 50];
+pub(crate) const BALANCE_THRES: [f32; 3] = [f32::INFINITY, 0.8, 0.3];
 
 // The tree becomes easy to be collapsed
 pub(crate) const HEIGHT_INTENSITY: [f32; 3] = [1.00, 1.04, 1.15];
@@ -378,10 +378,15 @@ pub(crate) fn recurse_phase_1<T: Element>(
     node: T::NodeKey,
 ) -> P1Report {
     match f!(context.tree).nodes[node] {
-        TreeNode::Split(TreeNodeSplit { minus, plus, .. }) => {
-            let r1 = recurse_phase_1(context, depth + 1, minus);
-            let r2 = recurse_phase_1(context, depth + 1, plus);
-            let height = r1.height.max(r2.height);
+        TreeNode::Split(TreeNodeSplit {
+            minus,
+            plus,
+            initial_balance,
+            ..
+        }) => {
+            let r_m = recurse_phase_1(context, depth + 1, minus);
+            let r_p = recurse_phase_1(context, depth + 1, plus);
+            let height = r_m.height.max(r_p.height);
 
             let params = f!(context.params);
             let collapse = 'collapse: {
@@ -390,9 +395,9 @@ pub(crate) fn recurse_phase_1<T: Element>(
                     break 'collapse false;
                 }
 
-                let cnt1 = r1.count as usize;
-                let cnt2 = r2.count as usize;
-                let total = cnt1 + cnt2;
+                let cnt_m = r_m.count as usize;
+                let cnt_p = r_p.count as usize;
+                let total = cnt_m + cnt_p;
 
                 if total == 0 {
                     break 'collapse true;
@@ -404,11 +409,14 @@ pub(crate) fn recurse_phase_1<T: Element>(
 
                 let balance_coeff = params.balancing as usize;
                 let unbalanced = if !disable_balance && balance_coeff > 0 {
-                    let unbalance_threshold = UNBALANCE_THRES_PCNT[balance_coeff - 1];
-                    let diff = cnt1.abs_diff(cnt2);
+                    // TODO: check if subnodes are correctly balanced.
+                    let balance = r_p.count as i32 - r_m.count as i32;
+                    let excused = balance - initial_balance;
 
-                    let unbalance_percent = diff * 100 / total;
-                    unbalance_percent >= unbalance_threshold
+                    let thres = BALANCE_THRES[balance_coeff];
+                    let unbalance_rate = excused.abs() as f32 * 2.0 / total as f32;
+
+                    unbalance_rate > thres
                 } else {
                     false
                 };
@@ -459,7 +467,7 @@ pub(crate) fn recurse_phase_1<T: Element>(
             } else {
                 P1Report {
                     height: height + 1,
-                    count: r1.count + r2.count,
+                    count: r_m.count + r_p.count,
                 }
             }
         }
@@ -749,6 +757,8 @@ pub(crate) fn recurse_phase_2<T: Element>(
                 }
             }
 
+            let [len_minus, len_plus] = [minus.len, plus.len];
+
             // Mark this node as `pending validation` by setting head node's owner as
             // null. Since split operation can be performed multiple times over same
             // element, changing the owner of every element everytime is a bit redundant.
@@ -765,6 +775,7 @@ pub(crate) fn recurse_phase_2<T: Element>(
                     plus: plus_id,
                     axis,
                     value: split_at,
+                    initial_balance: len_plus as i32 - len_minus as i32,
                 })
             };
 

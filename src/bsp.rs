@@ -45,6 +45,11 @@ pub struct TreeNodeSplit<T: Element> {
     pub value: <T::Vector as Vector>::Num,
     pub minus: T::NodeKey,
     pub plus: T::NodeKey,
+
+    /// This is to prevent redundant collapse-split loop when higher level node split into
+    /// small number of leaf node due to spatial reasons, which is evaluated 'unbalanced'
+    /// during optimization even it was splitted right before.
+    initial_balance: i32,
 }
 
 #[derive(Clone)]
