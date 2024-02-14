@@ -49,9 +49,9 @@ pub struct TreeNodeSplit<T: Element> {
     pub minus: T::NodeKey,
     pub plus: T::NodeKey,
 
-    /// This is to prevent redundant collapse-split loop when higher level node split into
-    /// small number of leaf node due to spatial reasons, which is evaluated 'unbalanced'
-    /// during optimization even it was splitted right before.
+    /// The value is computed as `plus.count - minus.count`, which represents the level of
+    /// imbalance in the split. This ensures that the split node is not evaluated as
+    /// unbalanced even if it was initially empty or had a bias.
     initial_balance: i32,
 }
 

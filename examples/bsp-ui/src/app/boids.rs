@@ -4,7 +4,6 @@ use albatross::{
     bitindex::BitIndexSet,
     bsp::{self, OptimizeParameter},
     primitive::AabbRect,
-    ControlIntensity,
 };
 use egui::Stroke;
 use nalgebra::Vector2;

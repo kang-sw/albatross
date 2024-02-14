@@ -362,17 +362,20 @@ pub(crate) fn recurse_phase_1<T: Element>(
                         break 'balance false;
                     }
 
-                    // TODO: check if subnodes are correctly balanced.
                     let larger_count = cnt_m.max(cnt_p) as f32;
-                    let balance = r_p.count as i32 - r_m.count as i32 - initial_balance;
-                    let unbalance = balance.abs();
+                    let balance = r_p.count as i32 - r_m.count as i32;
 
-                    if unbalance <= 1 {
-                        // Balance 1 can never be resolved.
+                    // Adjust the initial balance to avoid unnecessary merge/split
+                    // operations that could be triggered by a false-positive from a leaf
+                    // initially set to zero, which was created due to a split constraint.
+                    let imbalance = (balance - initial_balance).abs();
+
+                    if imbalance == 0 {
+                        // Don't touch perfect balance.
                         break 'balance false;
                     }
 
-                    let unbalance_rate = unbalance as f32 / larger_count;
+                    let unbalance_rate = imbalance as f32 / larger_count;
                     let balance_rate = 1. - unbalance_rate;
 
                     balance_rate < params.balancing
