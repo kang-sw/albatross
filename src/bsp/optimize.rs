@@ -1,6 +1,5 @@
 use enum_as_inner::EnumAsInner;
 use slotmap::Key;
-use tap::Pipe as _;
 use tap::Tap as _;
 
 use super::Element;
@@ -66,26 +65,6 @@ pub struct OptimizeParameter {
     /// structure, especially after deletions or significant movements of elements.
     pub collapse_threshold: u32,
 
-    /// Indicates a depth level at which leaf nodes begin to resist splitting, and once
-    /// split, they are more readily collapsed back unless under extreme conditions of
-    /// overcrowding. This parameter is designed to control the depth of the tree,
-    /// ensuring that it does not become too deep, which can adversely affect performance.
-    ///
-    /// By setting an ideal depth limit, this encourages a more balanced tree structure
-    /// by delaying splits and favoring collapses at deeper levels, thereby optimizing
-    /// the spatial efficiency and query performance of the BSP tree.
-    pub ideal_depth: u16,
-
-    /// Determines the influence of the `ideal_depth_limit` on tree optimization
-    /// decisions. This coefficient adjusts how aggressively the tree adheres to the
-    /// ideal depth limit, affecting the willingness of leaf nodes to split or collapse
-    /// based on their depth in the tree.
-    ///
-    /// A higher coefficient increases the effect of the depth limit, promoting a more
-    /// compact tree structure by discouraging deep splits and encouraging early
-    /// collapses.
-    pub ideal_depth_effect: ControlIntensity,
-
     /// Sets the maximum depth that can be collapsed in a single update cycle, taking
     /// into account the node's balance and the number of child nodes. This parameter
     /// plays a significant role in the tree's rebalancing efforts, ensuring that
@@ -106,18 +85,6 @@ pub struct OptimizeParameter {
     /// tree, potentially adjusting optimization strategies to prevent the development
     /// of highly unbalanced branches.
     pub balancing: ControlIntensity,
-
-    /// Modifies thresholds for splitting and collapsing based on the node's height in
-    /// the tree, to counteract potential imbalances. As nodes are closer to the root,
-    /// this coefficient incrementally tightens the criteria for maintaining or dividing
-    /// nodes, addressing scenarios where a tree may become unbalanced with active leaf
-    /// nodes concentrated at disparate depths.
-    ///
-    /// This adaptive threshold adjustment ensures that the tree remains balanced, even
-    /// in cases where spatial distributions might lead to uneven depth utilization,
-    /// thereby enhancing the overall efficiency and effectiveness of the BSP tree's
-    /// spatial partitioning capabilities.
-    pub node_height_effect: ControlIntensity,
 
     /// Specifies the algorithm used to calculate the split value when a node is divided
     /// into two child nodes. This parameter influences the method used to determine the
@@ -164,11 +131,8 @@ impl OptimizeParameter {
         Self {
             split_threshold: split_count,
             collapse_threshold: split_count / 2,
-            ideal_depth: 8,
-            ideal_depth_effect: ControlIntensity::Moderate,
             max_collapse_height: 8,
             balancing: ControlIntensity::Moderate,
-            node_height_effect: ControlIntensity::Moderate,
             split_strategy: SplitStrategy::ClusterMedian,
             minimum_length: 0.,
             suboptimal_split_count: 1,
@@ -182,11 +146,8 @@ impl OptimizeParameter {
         Self {
             split_threshold: u32::MAX,
             collapse_threshold: 0,
-            ideal_depth: u16::MAX,
-            ideal_depth_effect: ControlIntensity::Disable,
             max_collapse_height: u16::MAX,
             balancing: ControlIntensity::Disable,
-            node_height_effect: ControlIntensity::Disable,
             split_strategy: SplitStrategy::Average,
             minimum_length: 0.,
             suboptimal_split_count: 1,
@@ -330,8 +291,8 @@ impl<T: Element> Tree<T> {
 
         let root = self.root;
         let context = &mut (self, &mut on_update, params);
-        recurse_phase_1(context, 0, root);
-        recurse_phase_2(context, 0, root);
+        recurse_phase_1(context, root);
+        recurse_phase_2(context, root);
         recurse_phase_3(context.0, root);
     }
 }
@@ -347,12 +308,6 @@ pub(crate) struct P1Report {
 // config, unbalance is allowed until 80%. For extreme config,
 // it's 40%.
 pub(crate) const BALANCE_THRES: [f32; 3] = [f32::INFINITY, 0.7, 0.3];
-
-// The tree becomes easy to be collapsed
-pub(crate) const HEIGHT_INTENSITY: [f32; 3] = [1.00, 1.04, 1.15];
-
-// The tree becomes hard to be splitted
-pub(crate) const OVER_DEPTH_INTENSITY: [f32; 3] = [1.00, 1.10, 1.40];
 
 /* ---------------------------------- Phase 1: Collapse --------------------------------- */
 
@@ -374,7 +329,6 @@ pub(crate) fn recurse_phase_1<T: Element>(
         &mut impl FnMut(OptimizationEvent<T::NodeKey>),
         &OptimizeParameter,
     ),
-    depth: u16,
     node: T::NodeKey,
 ) -> P1Report {
     match f!(context.tree).nodes[node] {
@@ -384,8 +338,8 @@ pub(crate) fn recurse_phase_1<T: Element>(
             initial_balance,
             ..
         }) => {
-            let r_m = recurse_phase_1(context, depth + 1, minus);
-            let r_p = recurse_phase_1(context, depth + 1, plus);
+            let r_m = recurse_phase_1(context, minus);
+            let r_p = recurse_phase_1(context, plus);
             let height = r_m.height.max(r_p.height);
 
             let params = f!(context.params);
@@ -421,19 +375,7 @@ pub(crate) fn recurse_phase_1<T: Element>(
                     false
                 };
 
-                unbalanced || {
-                    // Increasing threshold coefficient makes
-                    let threshold = {
-                        let over_depth = depth.saturating_sub(params.ideal_depth);
-                        params.collapse_threshold as f32
-                            * OVER_DEPTH_INTENSITY[params.ideal_depth_effect as usize]
-                                .powf(over_depth as _)
-                            * HEIGHT_INTENSITY[params.node_height_effect as usize].powf(height as _)
-                    } as usize;
-
-                    // Increment collapse threshold
-                    total <= threshold
-                }
+                unbalanced || total <= params.collapse_threshold as usize
             };
 
             if collapse {
@@ -552,14 +494,13 @@ pub(crate) fn recurse_phase_2<T: Element>(
         &mut impl FnMut(OptimizationEvent<T::NodeKey>),
         &OptimizeParameter,
     ),
-    depth: u16,
     node: T::NodeKey,
 ) {
     match f!(context.tree).nodes[node] {
         TreeNode::Split(TreeNodeSplit { minus, plus, .. }) => {
             // This is dead simple; just visit children nodes.
-            recurse_phase_2(context, depth + 1, minus);
-            recurse_phase_2(context, depth + 1, plus);
+            recurse_phase_2(context, minus);
+            recurse_phase_2(context, plus);
 
             return; // Returns early.
         }
@@ -567,27 +508,23 @@ pub(crate) fn recurse_phase_2<T: Element>(
             bound, head, len, ..
         }) => {
             let (tree, on_update, params) = context;
-            let over_depth = depth.saturating_sub(params.ideal_depth);
-            let thres = (params.split_threshold as f32)
-                .tap_mut(|x| {
-                    let index = params.ideal_depth_effect as usize;
-                    *x *= OVER_DEPTH_INTENSITY[index].powf(over_depth as f32)
-                })
-                .pipe(|x| x as usize);
 
-            if (len as usize) <= thres {
+            if (len as usize) < params.split_threshold.max(1) as usize {
                 //            ^^ Makes zero always return.
                 return;
             }
 
+            // FIXME: Remove this magic number!
+            const SQUARE_SPLIT_CAP: f64 = 64.;
+
             let mut bound_lengths = T::Vector::zero_f64();
-            let bound_length_thr = (params.minimum_length * 2.).max(1e-6);
+            let bound_length_thr = (params.minimum_length * 2.).max(1e-4);
             for i in 0..T::Vector::D {
                 bound_lengths[i] = bound.length(i).to_f64();
             }
 
             // If all bound lengths are too short, we can't split this node.
-            if (0..T::Vector::D).all(|i| bound_lengths[i] <= bound_length_thr) {
+            if (0..T::Vector::D).all(|i| bound_lengths[i] < bound_length_thr) {
                 return;
             }
 
@@ -638,9 +575,6 @@ pub(crate) fn recurse_phase_2<T: Element>(
 
                 for i in 0..T::Vector::D {
                     if params.square_split_axes.get(i) {
-                        // FIXME: Remove this magic number!
-                        const SQUARE_SPLIT_CAP: f64 = 64.;
-
                         variant[i] *= (bound_lengths[i] / shortest_border)
                             .min(SQUARE_SPLIT_CAP)
                             .powi(2);
@@ -802,8 +736,8 @@ pub(crate) fn recurse_phase_2<T: Element>(
         }
     };
 
-    recurse_phase_2(context, depth + 1, minus);
-    recurse_phase_2(context, depth + 1, plus);
+    recurse_phase_2(context, minus);
+    recurse_phase_2(context, plus);
 }
 
 /* ------------------------------------- Phase 3: Validation ------------------------------------ */

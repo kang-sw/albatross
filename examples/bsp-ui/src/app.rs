@@ -176,11 +176,8 @@ impl eframe::App for TemplateApp {
                     let OptimizeParameter {
                         split_threshold,
                         collapse_threshold,
-                        ideal_depth,
-                        ideal_depth_effect,
                         max_collapse_height,
                         balancing,
-                        node_height_effect: node_height_collapse_effect,
                         split_strategy,
                         minimum_length: minimum_size,
                         suboptimal_split_count: short_axis_fallback,
@@ -190,11 +187,7 @@ impl eframe::App for TemplateApp {
                         ..
                     } = &mut self.model.tree_optimize;
 
-                    let label_params = [
-                        ("Balancing", balancing),
-                        ("Node Height Effect", node_height_collapse_effect),
-                        ("Ideal Depth Effect", ideal_depth_effect),
-                    ];
+                    let label_params = [("Balancing", balancing)];
 
                     for (label, param) in label_params {
                         ui.columns(2, |cols| {
@@ -224,7 +217,6 @@ impl eframe::App for TemplateApp {
 
                     let mut short_axis_fallback_u16 = *short_axis_fallback as u16;
                     let label_value_pairs = [
-                        ("Ideal Depth", ideal_depth),
                         ("Max Collapse Height", max_collapse_height),
                         ("Axis Find Fallback", &mut short_axis_fallback_u16),
                         ("Balancing Start Height", balancing_start_height),

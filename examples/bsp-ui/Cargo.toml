@@ -5,7 +5,6 @@ authors = ["Emil Ernerfeldt <emil.ernerfeldt@gmail.com>"]
 edition = "2021"
 rust-version = "1.72"
 
-
 [dependencies]
 egui = "0.26.0"
 eframe = { version = "0.26.0", default-features = false, features = [
