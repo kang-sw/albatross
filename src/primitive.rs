@@ -334,8 +334,12 @@ impl<V: Vector> AabbRect<V> {
     }
 
     pub fn length(&self, axis: AxisIndex) -> V::Num {
-        debug_assert!(self.max[axis] - self.min[axis] >= V::Num::zero());
-        self.max[axis] - self.min[axis]
+        if self.max[axis] == V::Num::MAXVALUE || self.min[axis] == V::Num::MINVALUE {
+            V::Num::MAXVALUE
+        } else {
+            debug_assert!(self.max[axis] - self.min[axis] >= V::Num::zero());
+            self.max[axis] - self.min[axis]
+        }
     }
 
     pub fn center(&self) -> V {
