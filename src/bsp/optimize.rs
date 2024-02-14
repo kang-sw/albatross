@@ -14,7 +14,6 @@ use crate::primitive::AabbRect;
 use crate::primitive::NumberCommon;
 use crate::primitive::Vector;
 use crate::primitive::VectorExt;
-use crate::ControlIntensity;
 
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -77,15 +76,16 @@ pub struct OptimizeParameter {
     /// conservative.
     pub max_collapse_height: u16,
 
-    /// Influences how the balance between different branches of the tree affects
-    /// optimization decisions. This coefficient determines the weight of balance
-    /// considerations in adjusting thresholds for splitting and collapsing nodes,
-    /// aiming to maintain a uniformly distributed tree structure.
+    /// Within normalized range from 0 to 1, specifies the intensity of the balancing
+    /// process. This parameter influences the degree to which the tree is balanced during
+    /// optimization, affecting the distribution of elements across the tree and the
+    /// efficiency of spatial queries.
     ///
-    /// A higher balance coefficient places greater emphasis on achieving a balanced
-    /// tree, potentially adjusting optimization strategies to prevent the development
-    /// of highly unbalanced branches.
-    pub balancing: ControlIntensity,
+    /// 0 => Disable balancing 1 => Most aggressive balancing
+    ///
+    /// For example, if the value is 0.3, then the tree will tolerate 30% of unbalance
+    /// before it starts to balance. This is default behavior for `moderate` setup.
+    pub balancing: f32,
 
     /// Specifies the algorithm used to calculate the split value when a node is divided
     /// into two child nodes. This parameter influences the method used to determine the
@@ -133,7 +133,7 @@ impl OptimizeParameter {
             split_threshold: split_count,
             collapse_threshold: split_count / 2,
             max_collapse_height: 8,
-            balancing: ControlIntensity::Moderate,
+            balancing: 0.3,
             split_strategy: SplitStrategy::ClusterMedian,
             minimum_length: 0.,
             suboptimal_split_count: 1,
@@ -148,7 +148,7 @@ impl OptimizeParameter {
             split_threshold: u32::MAX,
             collapse_threshold: 0,
             max_collapse_height: u16::MAX,
-            balancing: ControlIntensity::Disable,
+            balancing: 0.,
             split_strategy: SplitStrategy::Average,
             minimum_length: 0.,
             suboptimal_split_count: 1,
@@ -305,11 +305,6 @@ pub(crate) struct P1Report {
     count: u32,
 }
 
-// Balance evaluation => 0 at perfect balance. For moderate
-// config, unbalance is allowed until 80%. For extreme config,
-// it's 40%.
-pub(crate) const BALANCE_THRES: [f32; 3] = [f32::INFINITY, 0.7, 0.3];
-
 /* ---------------------------------- Phase 1: Collapse --------------------------------- */
 
 macro_rules! f {
@@ -362,18 +357,25 @@ pub(crate) fn recurse_phase_1<T: Element>(
                 // likely just repeat merge/split over and over.
                 let disable_balance = height < params.balancing_start_height;
 
-                let balance_coeff = params.balancing as usize;
-                let unbalanced = if !disable_balance && balance_coeff > 0 {
+                let unbalanced = 'balance: {
+                    if disable_balance || params.balancing <= 0. {
+                        break 'balance false;
+                    }
+
                     // TODO: check if subnodes are correctly balanced.
-                    let balance = r_p.count as i32 - r_m.count as i32;
-                    let excused = balance - initial_balance;
+                    let larger_count = cnt_m.max(cnt_p) as f32;
+                    let balance = r_p.count as i32 - r_m.count as i32 - initial_balance;
+                    let unbalance = balance.abs();
 
-                    let thres = BALANCE_THRES[balance_coeff];
-                    let unbalance_rate = excused.abs() as f32 * 2.0 / total as f32;
+                    if unbalance <= 1 {
+                        // Balance 1 can never be resolved.
+                        break 'balance false;
+                    }
 
-                    unbalance_rate > thres
-                } else {
-                    false
+                    let unbalance_rate = unbalance as f32 / larger_count;
+                    let balance_rate = 1. - unbalance_rate;
+
+                    balance_rate < params.balancing
                 };
 
                 unbalanced || total <= params.collapse_threshold as usize

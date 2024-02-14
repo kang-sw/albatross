@@ -187,21 +187,27 @@ impl eframe::App for TemplateApp {
                         ..
                     } = &mut self.model.tree_optimize;
 
-                    let label_params = [("Balancing", balancing)];
-
-                    for (label, param) in label_params {
+                    let label_params_normal = [("Balancing", balancing)];
+                    for (label, params) in label_params_normal {
                         ui.columns(2, |cols| {
                             cols[0].label(label);
-
-                            cols[1].columns(3, |cols| {
-                                use albatross::ControlIntensity::*;
-
-                                cols[0].selectable_value(param, Disable, "Disable");
-                                cols[1].selectable_value(param, Moderate, "Moderate");
-                                cols[2].selectable_value(param, Extreme, "Extreme");
-                            });
+                            cols[1].add(egui::Slider::new(params, 0.0..=1.0))
                         });
                     }
+
+                    // for (label, param) in label_params {
+                    //     ui.columns(2, |cols| {
+                    //         cols[0].label(label);
+
+                    //         cols[1].columns(3, |cols| {
+                    //             use albatross::ControlIntensity::*;
+
+                    //             cols[0].selectable_value(param, Disable, "Disable");
+                    //             cols[1].selectable_value(param, Moderate, "Moderate");
+                    //             cols[2].selectable_value(param, Extreme, "Extreme");
+                    //         });
+                    //     });
+                    // }
 
                     let label_value_pairs = [
                         ("Split Threshold", split_threshold),

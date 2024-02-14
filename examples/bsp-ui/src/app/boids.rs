@@ -105,7 +105,6 @@ impl Default for Model {
             stat_max_record: 120,
             tree_optimize: bsp::OptimizeParameter::moderate(4).with(|x| {
                 x.minimum_length = 2.;
-                x.balancing = ControlIntensity::Moderate;
                 x.max_collapse_height = u16::MAX;
                 x.square_split_axes = BitIndexSet::all();
             }),
