@@ -11,6 +11,7 @@ fn test() {
         type Vector = [i32; 3];
         type ElemKey = ElemKey;
         type NodeKey = NodeKey;
+        type LeafNodeData = ();
 
         fn relocated(&mut self, _owner: NodeKey) {
             self.relocated = true;

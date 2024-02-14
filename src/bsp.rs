@@ -17,8 +17,10 @@ pub trait Element {
     type NodeKey: Key;
     type ElemKey: Key;
 
-    /// Mark this element moved. The element MUST NOT move its position within this method
-    /// call!
+    /// Any data type that implements [`Default`] and [`Clone`] can be put into leaf node.
+    type LeafNodeData: Default + Clone;
+
+    /// Mark this element moved.
     fn relocated(&mut self, _owner: Self::NodeKey) {}
 }
 
@@ -59,6 +61,7 @@ struct TreeNodeLeaf<T: Element> {
     head: T::ElemKey,
     tail: T::ElemKey, // To quickly merge two leaves
     len: u32,
+    data: T::LeafNodeData,
 }
 
 /* ----------------------------------------- Trait Impls ---------------------------------------- */
@@ -78,6 +81,7 @@ impl<T: Element> Tree<T> {
             bound: AabbRect::maximum(),
             head: T::ElemKey::null(),
             tail: T::ElemKey::null(),
+            data: T::LeafNodeData::default(),
             len: 0,
         }));
 
@@ -90,6 +94,10 @@ impl<T: Element> Tree<T> {
 
     pub fn new() -> Self {
         Self::with_capacity(0)
+    }
+
+    pub fn len_all_elems(&self) -> usize {
+        self.elems.len()
     }
 
     /// It must succeeds, since every region is covered by root.
@@ -143,6 +151,18 @@ impl<T: Element> Tree<T> {
 
     pub fn root(&self) -> T::NodeKey {
         self.root
+    }
+
+    pub fn leaf_data(&self, id: T::NodeKey) -> Option<&T::LeafNodeData> {
+        self.nodes
+            .get(id)
+            .and_then(|node| node.as_leaf().map(|x| &x.data))
+    }
+
+    pub fn leaf_data_mut(&mut self, id: T::NodeKey) -> Option<&mut T::LeafNodeData> {
+        self.nodes
+            .get_mut(id)
+            .and_then(|node| node.as_leaf_mut().map(|x| &mut x.data))
     }
 
     pub fn leaf_len(&self, id: T::NodeKey) -> u32 {
