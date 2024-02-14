@@ -638,7 +638,12 @@ pub(crate) fn recurse_phase_2<T: Element>(
 
                 for i in 0..T::Vector::D {
                     if params.square_split_axes.get(i) {
-                        variant[i] *= (bound_lengths[i] / shortest_border).powi(2);
+                        // FIXME: Remove this magic number!
+                        const SQUARE_SPLIT_CAP: f64 = 64.;
+
+                        variant[i] *= (bound_lengths[i] / shortest_border)
+                            .min(SQUARE_SPLIT_CAP)
+                            .powi(2);
                     }
                 }
             }
