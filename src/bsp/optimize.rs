@@ -97,6 +97,9 @@ pub struct OptimizeParameter {
     /// ^^ TODO: Tidy these doc comments
     ///
 
+    /// Specifies the size of the snap grid used to align split points and node bounds
+    pub snap_size: f64,
+
     /// If split fails due to the axis that has largest stdvar is too short, how many axis
     /// can be fallback-ed to find suboptimal axis, which has next largest stdvar?
     pub suboptimal_split_count: u8,
@@ -109,9 +112,6 @@ pub struct OptimizeParameter {
     /// trees that are expected to be very large, as it can be beneficial to allow the
     /// tree to grow to a certain size before starting to balance it.
     pub balancing_start_height: u16,
-
-    /// Specifies the size of the snap grid used to align split points and node bounds
-    pub snap_size: f64,
 }
 
 impl OptimizeParameter {
@@ -295,6 +295,67 @@ impl<T: Element> Tree<T> {
         recurse_phase_2(context, root);
         recurse_phase_3(context.0, root);
     }
+
+    pub(crate) fn impl_collapse_recursive(
+        &mut self,
+        on_update: &mut impl FnMut(OptimizationEvent<T::NodeKey>),
+        bounds: &mut [T::Vector; 2],
+        root_id: T::NodeKey,
+        node: T::NodeKey,
+    ) {
+        match self.nodes.remove(node).unwrap() {
+            TreeNode::Split(TreeNodeSplit { minus, plus, .. }) => {
+                self.impl_collapse_recursive(on_update, bounds, root_id, minus);
+                self.impl_collapse_recursive(on_update, bounds, root_id, plus);
+            }
+            TreeNode::Leaf(leaf) => {
+                on_update(OptimizationEvent::Merge {
+                    from: node,
+                    into: root_id,
+                });
+
+                // Extend parent bound
+                bounds[0] = bounds[0].min_values(leaf.bound.min());
+                bounds[1] = bounds[1].max_values(leaf.bound.max());
+
+                if let Some(head) = self.elems.get_mut(leaf.head) {
+                    // Mark elements from this node as 'pending validation'
+                    head.owner = Key::null();
+                } else {
+                    debug_assert!(leaf.len == 0);
+                    debug_assert!(leaf.tail.is_null());
+
+                    // It was just empty leaf.
+                    return;
+                }
+
+                // Append all elements to root node's tail.
+                unsafe {
+                    let root = self.nodes.get_unchecked_mut(root_id).as_leaf_mut().unwrap();
+                    let [leaf_head, leaf_tail] = self
+                        .elems
+                        .get_disjoint_unchecked_mut([leaf.head, leaf.tail]);
+
+                    root.len += leaf.len;
+
+                    if root.tail.is_null() {
+                        debug_assert!(root.head.is_null());
+                        root.head = leaf.head;
+                        root.tail = leaf.tail;
+                    } else {
+                        debug_assert!(!root.head.is_null());
+
+                        let prev_root_tail = root.tail;
+                        leaf_head.prev = root.tail;
+                        leaf_tail.next = Key::null();
+                        root.tail = leaf.tail;
+
+                        self.elems.get_unchecked_mut(prev_root_tail).next = leaf.head;
+                    }
+                }
+            }
+        }
+    }
 }
 
 /* ---------------------------------------- Inner Methods --------------------------------------- */
@@ -379,14 +440,18 @@ pub(crate) fn recurse_phase_1<T: Element>(
             };
 
             if collapse {
+                let (tree, on_update, ..) = context;
+
                 // Convert this node into leaf node.
-                f!(context.tree).nodes[node] = TreeNode::Leaf(TreeNodeLeaf {
+                tree.nodes[node] = TreeNode::Leaf(TreeNodeLeaf {
                     // This is just temporary value.
                     bound: AabbRect::maximum(),
 
                     head: Key::null(),
                     tail: Key::null(),
                     len: 0,
+
+                    data: T::LeafData::default(),
                 });
 
                 // Subnodes' bound will be merged into this.
@@ -395,11 +460,11 @@ pub(crate) fn recurse_phase_1<T: Element>(
                     <T::Vector as VectorExt>::minimum(),
                 ];
 
-                collapse_recursive(context, &mut bounds, node, minus);
-                collapse_recursive(context, &mut bounds, node, plus);
+                tree.impl_collapse_recursive(on_update, &mut bounds, node, minus);
+                tree.impl_collapse_recursive(on_update, &mut bounds, node, plus);
 
                 // It is guaranteed the original range is restored.
-                let leaf = f!(context.tree).nodes[node].as_leaf_mut().unwrap();
+                let leaf = tree.nodes[node].as_leaf_mut().unwrap();
                 leaf.bound = AabbRect::new(bounds[0], bounds[1]);
 
                 P1Report {
@@ -418,72 +483,6 @@ pub(crate) fn recurse_phase_1<T: Element>(
             height: 0,
             count: leaf.len,
         },
-    }
-}
-
-pub(crate) fn collapse_recursive<T: Element>(
-    context: &mut (
-        &mut Tree<T>,
-        &mut impl FnMut(OptimizationEvent<T::NodeKey>),
-        &OptimizeParameter,
-    ),
-    bounds: &mut [T::Vector; 2],
-    root_id: T::NodeKey,
-    node: T::NodeKey,
-) {
-    match f!(context.tree).nodes.remove(node).unwrap() {
-        TreeNode::Split(TreeNodeSplit { minus, plus, .. }) => {
-            collapse_recursive(context, bounds, root_id, minus);
-            collapse_recursive(context, bounds, root_id, plus);
-        }
-        TreeNode::Leaf(leaf) => {
-            let (tree, on_update, _) = context;
-
-            on_update(OptimizationEvent::Merge {
-                from: node,
-                into: root_id,
-            });
-
-            // Extend parent bound
-            bounds[0] = bounds[0].min_values(leaf.bound.min());
-            bounds[1] = bounds[1].max_values(leaf.bound.max());
-
-            if let Some(head) = tree.elems.get_mut(leaf.head) {
-                // Mark elements from this node as 'pending validation'
-                head.owner = Key::null();
-            } else {
-                debug_assert!(leaf.len == 0);
-                debug_assert!(leaf.tail.is_null());
-
-                // It was just empty leaf.
-                return;
-            }
-
-            // Append all elements to root node's tail.
-            unsafe {
-                let root = tree.nodes.get_unchecked_mut(root_id).as_leaf_mut().unwrap();
-                let [leaf_head, leaf_tail] = tree
-                    .elems
-                    .get_disjoint_unchecked_mut([leaf.head, leaf.tail]);
-
-                root.len += leaf.len;
-
-                if root.tail.is_null() {
-                    debug_assert!(root.head.is_null());
-                    root.head = leaf.head;
-                    root.tail = leaf.tail;
-                } else {
-                    debug_assert!(!root.head.is_null());
-
-                    let prev_root_tail = root.tail;
-                    leaf_head.prev = root.tail;
-                    leaf_tail.next = Key::null();
-                    root.tail = leaf.tail;
-
-                    tree.elems.get_unchecked_mut(prev_root_tail).next = leaf.head;
-                }
-            }
-        }
     }
 }
 
@@ -650,6 +649,7 @@ pub(crate) fn recurse_phase_2<T: Element>(
                 head: Key::null(),
                 tail: Key::null(),
                 len: 0,
+                data: T::LeafData::default(),
             }));
 
             let plus_id = tree.nodes.insert(TreeNode::Leaf(TreeNodeLeaf {
@@ -657,6 +657,7 @@ pub(crate) fn recurse_phase_2<T: Element>(
                 head: Key::null(),
                 tail: Key::null(),
                 len: 0,
+                data: T::LeafData::default(),
             }));
 
             let [minus, plus] = unsafe {
@@ -772,5 +773,25 @@ pub(crate) fn recurse_phase_3<T: Element>(tree: &mut Tree<T>, node_id: T::NodeKe
                 }
             }
         }
+    }
+}
+
+/* ---------------------------------------------------------------------------------------------- */
+/*                                   MANUAL OPTIMIZATION METHODS                                  */
+/* ---------------------------------------------------------------------------------------------- */
+
+impl<T: Element> Tree<T> {
+    /// # Panics
+    ///
+    /// Panics if `node` is not a leaf node.
+    pub fn node_split_at(&mut self, node: T::NodeKey, axis: usize, at: <T::Vector as Vector>::Num) {
+        todo!()
+    }
+
+    /// # Panics
+    ///
+    /// Panics if `node` is not a split node.
+    pub fn node_collapse(&mut self, node: T::NodeKey) {
+        todo!()
     }
 }

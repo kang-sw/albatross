@@ -30,6 +30,7 @@ impl bsp::Element for BspData {
     type Vector = [f32; 2];
     type ElemKey = ElementIndex;
     type NodeKey = TreeNodeIndex;
+    type LeafData = ();
 }
 
 #[derive(Clone, Copy)]
