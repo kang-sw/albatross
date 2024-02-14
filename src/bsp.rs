@@ -18,7 +18,7 @@ pub trait Element {
     type ElemKey: Key;
 
     /// Any data type that implements [`Default`] and [`Clone`] can be put into leaf node.
-    type LeafNodeData: Default + Clone;
+    type LeafData: Default + Clone;
 
     /// Mark this element moved.
     fn relocated(&mut self, _owner: Self::NodeKey) {}
@@ -40,6 +40,7 @@ enum TreeNode<T: Element> {
     Leaf(TreeNodeLeaf<T>),
 }
 
+/// Splits the region into two parts based on the specified axis and value(hyperplane).
 #[derive(Clone)]
 #[non_exhaustive]
 pub struct TreeNodeSplit<T: Element> {
@@ -61,7 +62,7 @@ struct TreeNodeLeaf<T: Element> {
     head: T::ElemKey,
     tail: T::ElemKey, // To quickly merge two leaves
     len: u32,
-    data: T::LeafNodeData,
+    data: T::LeafData,
 }
 
 /* ----------------------------------------- Trait Impls ---------------------------------------- */
@@ -69,6 +70,22 @@ struct TreeNodeLeaf<T: Element> {
 impl<T: Element> Default for Tree<T> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl<T> std::fmt::Debug for TreeNodeSplit<T>
+where
+    T: Element,
+    <T::Vector as Vector>::Num: std::fmt::Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TreeNodeSplit")
+            .field("axis", &self.axis)
+            .field("value", &self.value)
+            .field("minus", &self.minus)
+            .field("plus", &self.plus)
+            .field("initial_balance", &self.initial_balance)
+            .finish()
     }
 }
 
@@ -81,7 +98,7 @@ impl<T: Element> Tree<T> {
             bound: AabbRect::maximum(),
             head: T::ElemKey::null(),
             tail: T::ElemKey::null(),
-            data: T::LeafNodeData::default(),
+            data: T::LeafData::default(),
             len: 0,
         }));
 
@@ -153,13 +170,13 @@ impl<T: Element> Tree<T> {
         self.root
     }
 
-    pub fn leaf_data(&self, id: T::NodeKey) -> Option<&T::LeafNodeData> {
+    pub fn leaf_data(&self, id: T::NodeKey) -> Option<&T::LeafData> {
         self.nodes
             .get(id)
             .and_then(|node| node.as_leaf().map(|x| &x.data))
     }
 
-    pub fn leaf_data_mut(&mut self, id: T::NodeKey) -> Option<&mut T::LeafNodeData> {
+    pub fn leaf_data_mut(&mut self, id: T::NodeKey) -> Option<&mut T::LeafData> {
         self.nodes
             .get_mut(id)
             .and_then(|node| node.as_leaf_mut().map(|x| &mut x.data))
@@ -178,6 +195,10 @@ impl<T: Element> Tree<T> {
             TreeNode::Leaf(leaf) => &leaf.bound,
             _ => unreachable!(),
         }
+    }
+
+    pub fn split_info(&self, id: T::NodeKey) -> Option<&TreeNodeSplit<T>> {
+        self.nodes.get(id).and_then(|node| node.as_split())
     }
 
     /// # Panics
