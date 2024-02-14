@@ -63,7 +63,7 @@ fn test() {
     let mut new_minus = None;
     let mut new_plus = None;
 
-    bsp.optimize(&OptimizeParameter::moderate(2), |x| match x {
+    bsp.optimize(&OptimizeParameter::moderate(3), |x| match x {
         OptimizationEvent::Split { from, minus, plus } => {
             assert!(from == root);
 
