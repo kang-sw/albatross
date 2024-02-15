@@ -333,7 +333,7 @@ pub(crate) fn recurse_phase_1_collapse<T: Element>(
         TreeNode::Split(TreeNodeSplit {
             minus,
             plus,
-            initial_balance,
+            balance_bias: initial_balance,
             ..
         }) => {
             let r_m = recurse_phase_1_collapse(context, minus);
@@ -357,10 +357,10 @@ pub(crate) fn recurse_phase_1_collapse<T: Element>(
 
                 // If both children are leaf node, do not evaluate balance; as it's highly
                 // likely just repeat merge/split over and over.
-                let disable_balance = height < params.balancing_start_height;
+                let not_balancing_height = height < params.balancing_start_height;
 
                 let unbalanced = 'balance: {
-                    if disable_balance || params.balancing <= 0. {
+                    if not_balancing_height || params.balancing <= 0. {
                         break 'balance false;
                     }
 
@@ -382,6 +382,13 @@ pub(crate) fn recurse_phase_1_collapse<T: Element>(
 
                     balance_rate < params.balancing
                 };
+
+                if !unbalanced && !not_balancing_height {
+                    // Compensate initial balance by 1 on every iteration. This prevents
+                    // unbalance branch gets deeper endlessly.
+                    let split = f!(context.tree).nodes[node].as_split_mut().unwrap();
+                    split.balance_bias -= split.balance_bias.signum();
+                }
 
                 let collapse_thres = params
                     .collapse_threshold
@@ -540,6 +547,9 @@ pub(crate) fn recurse_phase_2_split<T: Element>(
                 //            ^^ Makes zero always return.
                 return;
             }
+
+            // TODO: Rewrite the whole algorithm =>
+            // - For Each axes,
 
             // FIXME: Remove this magic number!
             const SQUARE_SPLIT_CAP: f64 = 8.;
@@ -776,7 +786,7 @@ fn split_tree_at<T: Element>(
             plus: plus_id,
             axis,
             value: split_at,
-            initial_balance: len_plus as i32 - len_minus as i32,
+            balance_bias: len_plus as i32 - len_minus as i32,
         })
     };
     (minus_id, plus_id)

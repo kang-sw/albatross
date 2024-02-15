@@ -378,6 +378,11 @@ impl Model {
         self.bsp
             .optimize(&OptimizeParameter::collapse_all(), |_| ());
     }
+
+    pub fn clear(&mut self) {
+        self.ecs.clear();
+        self.bsp.clear();
+    }
 }
 
 /* ---------------------------------------- Rendering --------------------------------------- */

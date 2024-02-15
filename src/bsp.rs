@@ -52,7 +52,7 @@ pub struct TreeNodeSplit<T: Element> {
     /// The value is computed as `plus.count - minus.count`, which represents the level of
     /// imbalance in the split. This ensures that the split node is not evaluated as
     /// unbalanced even if it was initially empty or had a bias.
-    initial_balance: i32,
+    balance_bias: i32,
 }
 
 #[derive(Clone)]
@@ -84,7 +84,7 @@ where
             .field("value", &self.value)
             .field("minus", &self.minus)
             .field("plus", &self.plus)
-            .field("initial_balance", &self.initial_balance)
+            .field("initial_balance", &self.balance_bias)
             .finish()
     }
 }

@@ -55,7 +55,11 @@ impl eframe::App for TemplateApp {
                 let pos = boids::to_world(pos, self.render_opt.offset, self.render_opt.zoom);
 
                 self.model.spawn_boids(
-                    if self.spawning_predator { 1 } else { 10 } * if was_click { 10 } else { 1 },
+                    if self.spawning_predator {
+                        1
+                    } else {
+                        10 * if was_click { 10 } else { 1 }
+                    },
                     pos,
                     self.spawning_predator,
                 );
@@ -132,8 +136,14 @@ impl eframe::App for TemplateApp {
             egui::CollapsingHeader::new("Boids")
                 .default_open(true)
                 .show(ui, |ui| {
-                    ui.checkbox(&mut self.spawning_predator, "Spawn Predator?");
-                    ui.checkbox(&mut self.model.enable_tick, "Enable Simulation?");
+                    ui.horizontal(|ui| {
+                        if ui.button("Clear").clicked() {
+                            self.model.clear();
+                        }
+
+                        ui.checkbox(&mut self.spawning_predator, "Spawn Predator?");
+                        ui.checkbox(&mut self.model.enable_tick, "Enable Simulation?");
+                    });
 
                     let mut speed = self.model.tick_delta * 60.0;
                     let label_param_pairs = [
