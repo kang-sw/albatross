@@ -708,8 +708,8 @@ fn split_tree_at<T: Element>(
     let bound = tree.leaf_bodies[leaf.body_id as usize].bound;
 
     let head = leaf.head;
-    let minus = { bound }.tap_mut(|x| x.split_minus_by(axis, split_at));
-    let plus = { bound }.tap_mut(|x| x.split_plus_by(axis, split_at));
+    let minus = { bound }.tap_mut(|x| x.apply_split_minus(axis, split_at));
+    let plus = { bound }.tap_mut(|x| x.apply_split_plus(axis, split_at));
 
     let (minus_id, _, body) = tree.create_leaf_node();
     body.bound = minus;

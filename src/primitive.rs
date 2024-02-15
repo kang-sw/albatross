@@ -535,7 +535,7 @@ impl<V: Vector> AabbRect<V> {
         self.min[axis] <= value && value < self.max[axis]
     }
 
-    pub fn intersect(&mut self, other: &Self) {
+    pub fn apply_intersection(&mut self, other: &Self) {
         for i in 0..V::D {
             self.min[i] = self.min[i].max_value(other.min[i]);
             self.max[i] = self.max[i].min_value(other.max[i]);
@@ -554,19 +554,19 @@ impl<V: Vector> AabbRect<V> {
         Self { min, max }
     }
 
-    pub fn split_minus_by(&mut self, axis: AxisIndex, value: V::Num) {
+    pub fn apply_split_minus(&mut self, axis: AxisIndex, value: V::Num) {
         self.max[axis] = self.min[axis].max_value(value);
     }
 
-    pub fn split_plus_by(&mut self, axis: AxisIndex, value: V::Num) {
+    pub fn apply_split_plus(&mut self, axis: AxisIndex, value: V::Num) {
         self.min[axis] = self.max[axis].min_value(value);
     }
 
     pub fn split_minus(&self, axis: AxisIndex, value: V::Num) -> Self {
-        { *self }.tap_mut(|x| x.split_minus_by(axis, value))
+        { *self }.tap_mut(|x| x.apply_split_minus(axis, value))
     }
 
     pub fn split_plus(&self, axis: AxisIndex, value: V::Num) -> Self {
-        { *self }.tap_mut(|x| x.split_plus_by(axis, value))
+        { *self }.tap_mut(|x| x.apply_split_plus(axis, value))
     }
 }

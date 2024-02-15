@@ -452,11 +452,11 @@ impl Model {
                         let mut other = all_rect;
 
                         if is_plus {
-                            all_rect.split_plus(split.axis(), split.value);
-                            other.split_minus(split.axis(), split.value);
+                            all_rect.apply_split_plus(split.axis(), split.value);
+                            other.apply_split_minus(split.axis(), split.value);
                         } else {
-                            all_rect.split_minus(split.axis(), split.value);
-                            other.split_plus(split.axis(), split.value);
+                            all_rect.apply_split_minus(split.axis(), split.value);
+                            other.apply_split_plus(split.axis(), split.value);
                         }
 
                         rects.push(all_rect);
@@ -465,7 +465,7 @@ impl Model {
                 );
 
                 let mut leaf_bound = *self.bsp.leaf_bound(node);
-                leaf_bound.intersect(&AabbRect::new_circular([0., 0.], self.area_radius));
+                leaf_bound.apply_intersection(&AabbRect::new_circular([0., 0.], self.area_radius));
 
                 rects.pop();
 
