@@ -5,12 +5,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-num = "0.4"
-num-traits = "0.2"
 slotmap = "1"
 
 tap = "1"
-fixed = "1"
+fixed = { version = "1", features = ["num-traits"] }
 
 thiserror = "1"
 

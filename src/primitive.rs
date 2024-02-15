@@ -4,8 +4,6 @@
 
 use std::ops::{Add, Div, Index, IndexMut, Mul, Sub};
 
-use num_traits::{One, Zero};
-
 macro_rules! trait_alias {
 	($vis:vis trait $name:ident {}, $($args:tt)*) => {
 		$vis trait $name: $($args)+ {}
@@ -15,8 +13,6 @@ macro_rules! trait_alias {
 trait_alias!(
     pub trait Number {},
     Copy
-        + Zero
-        + One
         + PartialOrd
         + Add<Output = Self>
         + Mul<Output = Self>
@@ -31,6 +27,9 @@ pub trait NumberCommon {
 
     fn to_f64(&self) -> f64;
     fn from_f64(value: f64) -> Self;
+
+    fn one() -> Self;
+    fn zero() -> Self;
 }
 
 pub trait Vector:
@@ -151,6 +150,14 @@ mod _impl_fixed {
             fn from_f64(value: f64) -> Self {
                 value as Self
             }
+
+            fn one() -> Self {
+                1 as _
+            }
+
+            fn zero() -> Self {
+                0 as _
+            }
         })*
     };
 }
@@ -169,6 +176,14 @@ mod _impl_fixed {
 
                 fn from_f64(value: f64) -> Self {
                     Self::from_num(value)
+                }
+
+                fn one() -> Self {
+                    Self::from_num(1)
+                }
+
+                fn zero() -> Self {
+                    Self::from_num(0)
                 }
             }
         };
