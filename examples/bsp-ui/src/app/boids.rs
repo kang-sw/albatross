@@ -452,11 +452,11 @@ impl Model {
                         let mut other = all_rect;
 
                         if is_plus {
-                            all_rect.split_plus(split.axis, split.value);
-                            other.split_minus(split.axis, split.value);
+                            all_rect.split_plus(split.axis(), split.value);
+                            other.split_minus(split.axis(), split.value);
                         } else {
-                            all_rect.split_minus(split.axis, split.value);
-                            other.split_plus(split.axis, split.value);
+                            all_rect.split_minus(split.axis(), split.value);
+                            other.split_plus(split.axis(), split.value);
                         }
 
                         rects.push(all_rect);

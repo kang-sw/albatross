@@ -4,6 +4,7 @@ use tap::Pipe;
 use tap::Tap as _;
 
 use super::Element;
+use super::LeafNodeBody;
 use super::Tree;
 use super::TreeNode;
 use super::TreeNodeLeaf;
@@ -401,7 +402,7 @@ pub(crate) fn recurse_phase_1_collapse<T: Element>(
                 let (tree, on_update, ..) = context;
 
                 // SAFETY: node is valid split reference.
-                let count = unsafe { impl_node_collapse(tree, node, on_update) }.len;
+                let count = unsafe { impl_node_collapse(tree, node, on_update) }.0.len;
 
                 P1Report { height: 0, count }
             } else {
@@ -426,7 +427,7 @@ unsafe fn impl_node_collapse<'a, T: Element>(
     tree: &'a mut Tree<T>,
     node: T::NodeKey,
     on_collapse: &mut impl FnMut(OptimizationEvent<T::NodeKey>),
-) -> &'a mut TreeNodeLeaf<T> {
+) -> (&'a mut TreeNodeLeaf<T>, &'a mut LeafNodeBody<T>) {
     let (minus, plus) = tree
         .nodes
         .get_unchecked(node)
@@ -435,16 +436,7 @@ unsafe fn impl_node_collapse<'a, T: Element>(
         .pipe(|x| (x.minus, x.plus));
 
     // Convert this node into leaf node.
-    *unsafe { tree.nodes.get_unchecked_mut(node) } = TreeNode::Leaf(TreeNodeLeaf {
-        // This is just temporary value.
-        bound: AabbRect::maximum(),
-
-        head: Key::null(),
-        tail: Key::null(),
-        len: 0,
-
-        data: T::LeafData::default(),
-    });
+    tree.cvt_split_to_leaf(node);
 
     // Subnodes' bound will be merged into this.
     let mut bounds: [<T as Element>::Vector; 2] = [
@@ -456,10 +448,10 @@ unsafe fn impl_node_collapse<'a, T: Element>(
     impl_collapse_recursive(tree, on_collapse, &mut bounds, node, plus);
 
     // It is guaranteed the original range is restored.
-    let leaf = tree.nodes.get_unchecked_mut(node).as_leaf_mut().unwrap();
-    leaf.bound = AabbRect::new(bounds[0], bounds[1]);
+    let (leaf, leaf_body) = tree.get_leaf_node_mut(node).unwrap();
+    leaf_body.bound = AabbRect::new(bounds[0], bounds[1]);
 
-    leaf
+    (leaf, leaf_body)
 }
 
 pub(crate) fn impl_collapse_recursive<T: Element>(
@@ -480,9 +472,11 @@ pub(crate) fn impl_collapse_recursive<T: Element>(
                 into: root_id,
             });
 
+            let leaf_body = tree.leaf_bodies.remove(leaf.body_id as _);
+
             // Extend parent bound
-            bounds[0] = bounds[0].min_values(leaf.bound.min());
-            bounds[1] = bounds[1].max_values(leaf.bound.max());
+            bounds[0] = bounds[0].min_values(leaf_body.bound.min());
+            bounds[1] = bounds[1].max_values(leaf_body.bound.max());
 
             if let Some(head) = tree.elems.get_mut(leaf.head) {
                 // Mark elements from this node as 'pending validation'
@@ -540,8 +534,9 @@ pub(crate) fn recurse_phase_2_split<T: Element>(
 
             return; // Returns early.
         }
-        TreeNode::Leaf(TreeNodeLeaf { bound, len, .. }) => {
+        TreeNode::Leaf(TreeNodeLeaf { len, body_id, .. }) => {
             let (tree, on_update, params) = context;
+            let bound = tree.leaf_bodies[body_id as usize].bound;
 
             if (len as usize) < params.split_threshold.max(2) as usize {
                 //            ^^ Makes zero always return.
@@ -710,26 +705,17 @@ fn split_tree_at<T: Element>(
 ) -> (<T as Element>::NodeKey, <T as Element>::NodeKey) {
     // Create new splitted subnodes.
     let leaf = tree.nodes[node].as_leaf().unwrap();
+    let bound = tree.leaf_bodies[leaf.body_id as usize].bound;
 
     let head = leaf.head;
-    let minus = { leaf.bound }.tap_mut(|x| x.split_minus(axis, split_at));
-    let plus = { leaf.bound }.tap_mut(|x| x.split_plus(axis, split_at));
+    let minus = { bound }.tap_mut(|x| x.split_minus(axis, split_at));
+    let plus = { bound }.tap_mut(|x| x.split_plus(axis, split_at));
 
-    let minus_id = tree.nodes.insert(TreeNode::Leaf(TreeNodeLeaf {
-        bound: minus,
-        head: Key::null(),
-        tail: Key::null(),
-        len: 0,
-        data: T::LeafData::default(),
-    }));
+    let (minus_id, _, body) = tree.create_leaf_node();
+    body.bound = minus;
 
-    let plus_id = tree.nodes.insert(TreeNode::Leaf(TreeNodeLeaf {
-        bound: plus,
-        head: Key::null(),
-        tail: Key::null(),
-        len: 0,
-        data: T::LeafData::default(),
-    }));
+    let (plus_id, _, body) = tree.create_leaf_node();
+    body.bound = plus;
 
     let [minus, plus] = unsafe {
         tree.nodes
@@ -780,15 +766,17 @@ fn split_tree_at<T: Element>(
     }
 
     // Change this node into split. SAFETY: node is VALID!
-    unsafe {
-        *tree.nodes.get_unchecked_mut(node) = TreeNode::Split(TreeNodeSplit {
+    tree.cvt_leaf_to_split(
+        node,
+        TreeNodeSplit {
             minus: minus_id,
             plus: plus_id,
-            axis,
+            axis: axis as _,
             value: split_at,
             balance_bias: len_plus as i32 - len_minus as i32,
-        })
-    };
+        },
+    );
+
     (minus_id, plus_id)
 }
 

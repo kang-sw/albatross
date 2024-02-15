@@ -1,7 +1,10 @@
 mod optimize;
 
+use std::mem::replace;
+
 use crate::primitive::{AabbRect, AxisIndex, Vector};
 use enum_as_inner::EnumAsInner;
+use slab::Slab;
 use slotmap::{Key, SlotMap};
 use tap::Tap;
 
@@ -31,6 +34,7 @@ pub trait Element {
 pub struct Tree<T: Element> {
     nodes: SlotMap<T::NodeKey, TreeNode<T>>,
     elems: SlotMap<T::ElemKey, TreeElement<T>>,
+    leaf_bodies: Slab<LeafNodeBody<T>>,
     root: T::NodeKey,
 }
 
@@ -44,8 +48,9 @@ enum TreeNode<T: Element> {
 #[derive(Clone)]
 #[non_exhaustive]
 pub struct TreeNodeSplit<T: Element> {
-    pub axis: AxisIndex,
+    pub axis: u8,
     pub value: <T::Vector as Vector>::Num,
+
     pub minus: T::NodeKey,
     pub plus: T::NodeKey,
 
@@ -57,12 +62,28 @@ pub struct TreeNodeSplit<T: Element> {
 
 #[derive(Clone)]
 struct TreeNodeLeaf<T: Element> {
-    /// For faster evaluation when the node moves
-    bound: AabbRect<T::Vector>,
     head: T::ElemKey,
     tail: T::ElemKey, // To quickly merge two leaves
     len: u32,
+    body_id: u32,
+}
+
+/// Separate body of leaf node to reduce memory usage, as split node count is mostly 1:1
+/// with leaf node count, and the leaf node size easily exceeds split node size in order
+/// of magnitude.
+#[derive(Clone)]
+struct LeafNodeBody<T: Element> {
+    bound: AabbRect<T::Vector>,
     data: T::LeafData,
+}
+
+/* ----------------------------------------- Misc Impls ----------------------------------------- */
+
+impl<T: Element> TreeNodeSplit<T> {
+    #[inline(always)]
+    pub fn axis(&self) -> usize {
+        self.axis as usize
+    }
 }
 
 /* ----------------------------------------- Trait Impls ---------------------------------------- */
@@ -92,37 +113,23 @@ where
 /* --------------------------------------- Public Tree API -------------------------------------- */
 
 impl<T: Element> Tree<T> {
-    pub fn with_capacity(capacity: usize) -> Self {
-        let mut node_pool = SlotMap::with_capacity_and_key(capacity);
-        let root_node = node_pool.insert(TreeNode::Leaf(TreeNodeLeaf {
-            bound: AabbRect::maximum(),
-            head: T::ElemKey::null(),
-            tail: T::ElemKey::null(),
-            data: T::LeafData::default(),
-            len: 0,
-        }));
-
+    pub fn with_capacity(node_capacity: usize, elem_capacity: usize) -> Self {
         Self {
-            nodes: node_pool,
-            root: root_node,
-            elems: SlotMap::with_capacity_and_key(capacity),
+            nodes: SlotMap::with_capacity_and_key(node_capacity),
+            leaf_bodies: Slab::with_capacity((node_capacity / 2 + 1).min(node_capacity)),
+            elems: SlotMap::with_capacity_and_key(elem_capacity),
+            root: T::NodeKey::null(),
         }
+        .tap_mut(|x| x.init_root_node())
     }
 
     fn init_root_node(&mut self) {
-        let root_node = self.nodes.insert(TreeNode::Leaf(TreeNodeLeaf {
-            bound: AabbRect::maximum(),
-            head: T::ElemKey::null(),
-            tail: T::ElemKey::null(),
-            data: T::LeafData::default(),
-            len: 0,
-        }));
-
+        let (root_node, ..) = self.create_leaf_node();
         self.root = root_node;
     }
 
     pub fn new() -> Self {
-        Self::with_capacity(0)
+        Self::with_capacity(0, 0)
     }
 
     pub fn len_all_elems(&self) -> usize {
@@ -148,7 +155,7 @@ impl<T: Element> Tree<T> {
         loop {
             match unsafe { self.nodes.get_unchecked(index) } {
                 TreeNode::Split(split) => {
-                    if pos[split.axis] < split.value {
+                    if pos[split.axis()] < split.value {
                         index = split.minus;
                         visit_trail(split, false);
                     } else {
@@ -182,16 +189,12 @@ impl<T: Element> Tree<T> {
         self.root
     }
 
-    pub fn leaf_data(&self, id: T::NodeKey) -> Option<&T::LeafData> {
-        self.nodes
-            .get(id)
-            .and_then(|node| node.as_leaf().map(|x| &x.data))
+    pub fn leaf_data(&self, id: T::NodeKey) -> &T::LeafData {
+        self.get_leaf_node(id).map(|x| &x.1.data).unwrap()
     }
 
-    pub fn leaf_data_mut(&mut self, id: T::NodeKey) -> Option<&mut T::LeafData> {
-        self.nodes
-            .get_mut(id)
-            .and_then(|node| node.as_leaf_mut().map(|x| &mut x.data))
+    pub fn leaf_data_mut(&mut self, id: T::NodeKey) -> &mut T::LeafData {
+        self.get_leaf_node_mut(id).map(|x| &mut x.1.data).unwrap()
     }
 
     pub fn leaf_len(&self, id: T::NodeKey) -> u32 {
@@ -203,10 +206,7 @@ impl<T: Element> Tree<T> {
     }
 
     pub fn leaf_bound(&self, id: T::NodeKey) -> &AabbRect<T::Vector> {
-        match &self.nodes[id] {
-            TreeNode::Leaf(leaf) => &leaf.bound,
-            _ => unreachable!(),
-        }
+        &self.get_leaf_node(id).unwrap().1.bound
     }
 
     pub fn split_info(&self, id: T::NodeKey) -> Option<&TreeNodeSplit<T>> {
@@ -216,6 +216,7 @@ impl<T: Element> Tree<T> {
     pub fn clear(&mut self) {
         self.nodes.clear();
         self.elems.clear();
+        self.leaf_bodies.clear();
 
         self.init_root_node();
     }
@@ -426,7 +427,8 @@ impl<T: Element> Tree<T> {
 
         self.visit_leaves(|node| {
             let leaf = self.nodes[node].as_leaf().unwrap();
-            leaf_bounds.push((node, leaf.bound));
+            let body = &self.leaf_bodies[leaf.body_id as usize];
+            leaf_bounds.push((node, body.bound));
 
             let count = self.leaf_iter(node).count();
             len_total += count;
@@ -555,6 +557,70 @@ impl<T: Element> Tree<T> {
             leaf.tail = elem_prev;
         }
     }
+
+    fn create_leaf_node(&mut self) -> (T::NodeKey, &mut TreeNodeLeaf<T>, &mut LeafNodeBody<T>) {
+        let body_id = self.leaf_bodies.insert(LeafNodeBody {
+            bound: AabbRect::maximum(),
+            data: T::LeafData::default(),
+        });
+
+        let leaf = self.nodes.insert(TreeNode::Leaf(TreeNodeLeaf {
+            head: T::ElemKey::null(),
+            tail: T::ElemKey::null(),
+            len: 0,
+            body_id: body_id as _,
+        }));
+
+        (
+            leaf,
+            self.nodes.get_mut(leaf).unwrap().as_leaf_mut().unwrap(),
+            self.leaf_bodies.get_mut(body_id).unwrap(),
+        )
+    }
+
+    fn cvt_split_to_leaf(
+        &mut self,
+        node: T::NodeKey,
+    ) -> (&mut TreeNodeLeaf<T>, &mut LeafNodeBody<T>) {
+        self.nodes[node] = TreeNode::Leaf(TreeNodeLeaf {
+            head: T::ElemKey::null(),
+            tail: T::ElemKey::null(),
+            len: 0,
+            body_id: self.leaf_bodies.insert(LeafNodeBody {
+                bound: AabbRect::maximum(),
+                data: T::LeafData::default(),
+            }) as _,
+        });
+
+        self.get_leaf_node_mut(node).unwrap()
+    }
+
+    fn cvt_leaf_to_split(&mut self, node: T::NodeKey, data: TreeNodeSplit<T>) {
+        let body = replace(&mut self.nodes[node], TreeNode::Split(data));
+        self.leaf_bodies
+            .remove(body.as_leaf().unwrap().body_id as _);
+    }
+
+    fn get_leaf_node(&self, key: T::NodeKey) -> Option<(&TreeNodeLeaf<T>, &LeafNodeBody<T>)> {
+        self.nodes.get(key).and_then(|node| {
+            node.as_leaf().map(|x| unsafe {
+                let id = x.body_id as _;
+                (x, self.leaf_bodies.get_unchecked(id))
+            })
+        })
+    }
+
+    fn get_leaf_node_mut(
+        &mut self,
+        key: T::NodeKey,
+    ) -> Option<(&mut TreeNodeLeaf<T>, &mut LeafNodeBody<T>)> {
+        self.nodes.get_mut(key).and_then(|node| {
+            node.as_leaf_mut().map(|x| unsafe {
+                let id = x.body_id as _;
+                (x, self.leaf_bodies.get_unchecked_mut(id))
+            })
+        })
+    }
 }
 
 /* -------------------------------------------- Query ------------------------------------------- */
@@ -650,8 +716,8 @@ impl<T: Element> Tree<T> {
         };
 
         let (over_min, under_max) = {
-            let axis_min = region.min()[split.axis];
-            let axis_max = region.max()[split.axis];
+            let axis_min = region.min()[split.axis()];
+            let axis_max = region.max()[split.axis()];
 
             (axis_min <= split.value, split.value < axis_max)
         };
@@ -659,7 +725,7 @@ impl<T: Element> Tree<T> {
         match (over_min, under_max) {
             (true, true) => {
                 // Only apply cutting if the split crosses the hyperplane.
-                let [minus, plus] = cut_m_p(region, split.axis, split.value);
+                let [minus, plus] = cut_m_p(region, split.axis(), split.value);
 
                 self.impl_query_region_with_cutter(split.minus, &minus, methods);
                 self.impl_query_region_with_cutter(split.plus, &plus, methods);
@@ -840,10 +906,11 @@ fn update_inner_recurse<T: Element, F: FnMut(&mut TreeElementEdit<T>)>(
             update_inner_recurse(ctx, plus);
         }
         TreeNode::Leaf(TreeNodeLeaf {
-            bound: leaf_bound,
             head: leaf_head,
+            body_id,
             ..
         }) => {
+            let leaf_bound = tree.leaf_bodies[body_id as usize].bound;
             let mut elem_index = leaf_head;
 
             while !elem_index.is_null() {
@@ -1023,22 +1090,14 @@ impl<T: Element> Drop for TreeElementEdit<'_, T> {
             // SAFETY: `self.elem` is valid element resides in valid node.
             unsafe {
                 let elem = self.tree.elems.get_unchecked_mut(self.elem);
+                let pos = elem.pos;
+
                 let owner_id = elem.owner;
 
-                let (elem, owner) = (
-                    elem,
-                    self.tree
-                        .nodes
-                        .get_unchecked_mut(owner_id)
-                        .as_leaf_mut()
-                        .unwrap(),
-                );
-
-                if owner.bound.contains(&elem.pos) {
+                let (_, owner_body) = self.tree.get_leaf_node_mut(owner_id).unwrap();
+                if owner_body.bound.contains(&pos) {
                     return;
                 }
-
-                let pos = elem.pos;
 
                 // SAFETY: `leaf` and `elem` both are valid.
                 self.tree.unlink(self.elem);
