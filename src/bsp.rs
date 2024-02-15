@@ -200,8 +200,8 @@ impl<T: Element> Tree<T> {
     pub fn query_region(&self, rect: &AabbRect<T::Vector>, on_query_hit: impl FnMut(T::NodeKey)) {
         self.query_region_with_cutter(rect, on_query_hit, |region, axis, value| {
             // Split the region into two parts based on the specified axis and value
-            let minus = { *region }.tap_mut(|x| x.split_minus(axis, value));
-            let plus = { *region }.tap_mut(|x| x.split_plus(axis, value));
+            let minus = { *region }.tap_mut(|x| x.split_minus_by(axis, value));
+            let plus = { *region }.tap_mut(|x| x.split_plus_by(axis, value));
 
             [minus, plus]
         })

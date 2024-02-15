@@ -12,7 +12,7 @@ use super::TreeNodeSplit;
 
 use crate::bitindex::BitIndexSet;
 use crate::primitive::AabbRect;
-use crate::primitive::NumberCommon;
+use crate::primitive::Number;
 use crate::primitive::Vector;
 use crate::primitive::VectorExt;
 
@@ -593,7 +593,7 @@ pub(crate) fn recurse_phase_2_split<T: Element>(
                     break 'square_split;
                 }
 
-                let max_value = <<T::Vector as Vector>::Num as NumberCommon>::MAXVALUE.to_f64();
+                let max_value = <<T::Vector as Vector>::Num as Number>::MAXVALUE.to_f64();
                 let mut shortest_border = max_value;
 
                 for i in 0..T::Vector::D {
@@ -708,8 +708,8 @@ fn split_tree_at<T: Element>(
     let bound = tree.leaf_bodies[leaf.body_id as usize].bound;
 
     let head = leaf.head;
-    let minus = { bound }.tap_mut(|x| x.split_minus(axis, split_at));
-    let plus = { bound }.tap_mut(|x| x.split_plus(axis, split_at));
+    let minus = { bound }.tap_mut(|x| x.split_minus_by(axis, split_at));
+    let plus = { bound }.tap_mut(|x| x.split_plus_by(axis, split_at));
 
     let (minus_id, _, body) = tree.create_leaf_node();
     body.bound = minus;

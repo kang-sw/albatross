@@ -4,32 +4,28 @@
 
 use std::ops::{Add, Div, Index, IndexMut, Mul, Sub};
 
-macro_rules! trait_alias {
-	($vis:vis trait $name:ident {}, $($args:tt)*) => {
-		$vis trait $name: $($args)+ {}
-		impl<T> $name for T where T: $($args)+ {}
-	};
-}
-trait_alias!(
-    pub trait Number {},
-    Copy
-        + PartialOrd
-        + Add<Output = Self>
-        + Mul<Output = Self>
-        + Sub<Output = Self>
-        + Div<Output = Self>
-        + NumberCommon
-);
+use tap::Tap;
 
-pub trait NumberCommon {
+pub trait Number:
+    Sized
+    + Copy
+    + PartialOrd
+    + Add<Output = Self>
+    + Mul<Output = Self>
+    + Sub<Output = Self>
+    + Div<Output = Self>
+{
     const MINVALUE: Self;
     const MAXVALUE: Self;
+    const ONE: Self;
+    const ZERO: Self;
 
     fn to_f64(&self) -> f64;
     fn from_f64(value: f64) -> Self;
 
-    fn one() -> Self;
-    fn zero() -> Self;
+    fn try_sqrt(self) -> Option<Self> {
+        None
+    }
 }
 
 pub trait Vector:
@@ -70,8 +66,16 @@ pub trait NumExt: Number {
         self.min_value(max).max_value(min)
     }
 
-    fn sqr(self) -> Self {
+    fn square(self) -> Self {
         self * self
+    }
+
+    fn is_zero(self) -> bool {
+        self == Self::ZERO
+    }
+
+    fn inv(self) -> Self {
+        Self::ONE / self
     }
 }
 
@@ -91,6 +95,28 @@ pub trait VectorExt: Vector {
         for i in 0..Self::D {
             v.set(i, Self::Num::MAXVALUE);
         }
+        v
+    }
+
+    fn max_component(&self) -> Self::Num {
+        let mut max = self.get(0);
+        for i in 1..Self::D {
+            max = max.max_value(self.get(i));
+        }
+        max
+    }
+
+    fn min_component(&self) -> Self::Num {
+        let mut min = self.get(0);
+        for i in 1..Self::D {
+            min = min.min_value(self.get(i));
+        }
+        min
+    }
+
+    fn unit(axis: AxisIndex) -> Self {
+        let mut v = Self::zero();
+        v.set(axis, Self::Num::ONE);
         v
     }
 
@@ -142,6 +168,14 @@ pub trait VectorExt: Vector {
         v
     }
 
+    fn amp(&self, value: Self::Num) -> Self {
+        let mut v = Self::zero();
+        for i in 0..Self::D {
+            v.set(i, self.get(i) * value);
+        }
+        v
+    }
+
     fn div(&self, other: &Self) -> Self {
         let mut v = Self::zero();
         for i in 0..Self::D {
@@ -150,8 +184,12 @@ pub trait VectorExt: Vector {
         v
     }
 
+    fn norm(&self) -> Self::Num {
+        self.length_squared().try_sqrt().unwrap()
+    }
+
     fn dot(&self, other: &Self) -> Self::Num {
-        let mut sum = Self::Num::zero();
+        let mut sum = Self::Num::ZERO;
         for i in 0..Self::D {
             sum = sum + self.get(i) * other.get(i);
         }
@@ -176,7 +214,7 @@ impl<T: Number, const D: usize> Vector for [T; D] {
     const D: AxisIndex = D;
 
     fn zero() -> Self {
-        [T::zero(); D]
+        [T::ZERO; D]
     }
 
     fn zero_f64() -> impl Vector<Num = f64> {
@@ -198,41 +236,61 @@ impl<T: Number, const D: usize> Vector for [T; D] {
 
 #[doc(hidden)]
 mod _impl_fixed {
-    use super::NumberCommon;
+    use super::Number;
     use fixed::*;
 
     macro_rules! define_minmax {
-    ($($ty:ty), *) => {
-        $(impl NumberCommon for $ty {
-            const MINVALUE: Self = Self::MIN;
-            const MAXVALUE: Self = Self::MAX;
+        ($($ty:ty), *) => {
+            $(impl Number for $ty {
+                const MINVALUE: Self = Self::MIN;
+                const MAXVALUE: Self = Self::MAX;
+                const ONE: Self = 1;
+                const ZERO: Self = 0;
 
-            fn to_f64(&self) -> f64 {
-                *self as f64
-            }
+                fn to_f64(&self) -> f64 {
+                    *self as f64
+                }
 
-            fn from_f64(value: f64) -> Self {
-                value as Self
-            }
+                fn from_f64(value: f64) -> Self {
+                    value as Self
+                }
+            })*
+        };
+    }
 
-            fn one() -> Self {
-                1 as _
-            }
+    define_minmax!(i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize);
 
-            fn zero() -> Self {
-                0 as _
-            }
-        })*
-    };
-}
+    macro_rules! define_minmax_float {
+        ($($ty:ty), *) => {
+            $(impl Number for $ty {
+                const MINVALUE: Self = Self::MIN;
+                const MAXVALUE: Self = Self::MAX;
+                const ONE: Self = 1 as _;
+                const ZERO: Self = 0 as _;
 
-    define_minmax!(i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize, f32, f64);
+                fn to_f64(&self) -> f64 {
+                    *self as f64
+                }
+
+                fn from_f64(value: f64) -> Self {
+                    value as Self
+                }
+                fn try_sqrt(self) -> Option<Self> {
+                    Some(self.sqrt())
+                }
+            })*
+        };
+    }
+
+    define_minmax_float!(f32, f64);
 
     macro_rules! define_minmax_fixed {
         ($ty:ident <$t:ident>, $tr:ident) => {
-            impl<$t: fixed::types::extra::$tr> NumberCommon for $ty<$t> {
+            impl<$t: fixed::types::extra::$tr> Number for $ty<$t> {
                 const MINVALUE: Self = Self::MIN;
                 const MAXVALUE: Self = Self::MAX;
+                const ONE: Self = Self::const_from_int(1);
+                const ZERO: Self = Self::const_from_int(0);
 
                 fn to_f64(&self) -> f64 {
                     (*self).to_num()
@@ -240,14 +298,6 @@ mod _impl_fixed {
 
                 fn from_f64(value: f64) -> Self {
                     Self::from_num(value)
-                }
-
-                fn one() -> Self {
-                    Self::from_num(1)
-                }
-
-                fn zero() -> Self {
-                    Self::from_num(0)
                 }
             }
         };
@@ -303,7 +353,7 @@ impl<V: Vector> AabbRect<V> {
 
     /// Build new rectangle from circular components.
     pub fn new_circular(center: V, radius: V::Num) -> Self {
-        assert!(radius >= V::Num::zero());
+        assert!(radius >= V::Num::ZERO);
 
         let mut min = center;
         let mut max = center;
@@ -321,8 +371,8 @@ impl<V: Vector> AabbRect<V> {
         let mut max = center;
 
         for i in 0..V::D {
-            let half = extent[i] / (V::Num::one() + V::Num::one());
-            assert!(half >= V::Num::zero());
+            let half = extent[i] / (V::Num::ONE + V::Num::ONE);
+            assert!(half >= V::Num::ZERO);
 
             min[i] = min[i] - half;
             max[i] = max[i] + half;
@@ -338,7 +388,7 @@ impl<V: Vector> AabbRect<V> {
             nearest[i] = nearest[i].clamp_value(self.min[i], self.max[i]);
         }
 
-        center.distance_squared(&nearest) <= radius.sqr()
+        center.distance_squared(&nearest) <= radius.square()
     }
 
     /// Creates a new `AabbRect` with the given minimum and maximum vectors
@@ -386,7 +436,7 @@ impl<V: Vector> AabbRect<V> {
     }
 
     pub fn area(&self) -> V::Num {
-        let mut area = V::Num::one();
+        let mut area = V::Num::ONE;
         for i in 0..V::D {
             area = area * (self.max[i] - self.min[i]);
         }
@@ -397,7 +447,7 @@ impl<V: Vector> AabbRect<V> {
         if self.max[axis] == V::Num::MAXVALUE || self.min[axis] == V::Num::MINVALUE {
             V::Num::MAXVALUE
         } else {
-            debug_assert!(self.max[axis] - self.min[axis] >= V::Num::zero());
+            debug_assert!(self.max[axis] - self.min[axis] >= V::Num::ZERO);
             self.max[axis] - self.min[axis]
         }
     }
@@ -405,10 +455,7 @@ impl<V: Vector> AabbRect<V> {
     pub fn center(&self) -> V {
         let mut center = V::zero();
         for i in 0..V::D {
-            center.set(
-                i,
-                (self.min[i] + self.max[i]) / (V::Num::one() + V::Num::one()),
-            );
+            center.set(i, (self.min[i] + self.max[i]) / (V::Num::ONE + V::Num::ONE));
         }
         center
     }
@@ -507,11 +554,19 @@ impl<V: Vector> AabbRect<V> {
         Self { min, max }
     }
 
-    pub fn split_minus(&mut self, axis: AxisIndex, value: V::Num) {
+    pub fn split_minus_by(&mut self, axis: AxisIndex, value: V::Num) {
         self.max[axis] = self.min[axis].max_value(value);
     }
 
-    pub fn split_plus(&mut self, axis: AxisIndex, value: V::Num) {
+    pub fn split_plus_by(&mut self, axis: AxisIndex, value: V::Num) {
         self.min[axis] = self.max[axis].min_value(value);
+    }
+
+    pub fn split_minus(&self, axis: AxisIndex, value: V::Num) -> Self {
+        { *self }.tap_mut(|x| x.split_minus_by(axis, value))
+    }
+
+    pub fn split_plus(&self, axis: AxisIndex, value: V::Num) -> Self {
+        { *self }.tap_mut(|x| x.split_plus_by(axis, value))
     }
 }
