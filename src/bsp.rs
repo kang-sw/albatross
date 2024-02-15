@@ -72,9 +72,9 @@ struct TreeNodeLeaf<T: Element> {
 /// with leaf node count, and the leaf node size easily exceeds split node size in order
 /// of magnitude.
 #[derive(Clone)]
-struct LeafNodeBody<T: Element> {
-    bound: AabbRect<T::Vector>,
-    data: T::LeafData,
+pub struct LeafNodeBody<T: Element> {
+    pub bound: AabbRect<T::Vector>,
+    pub data: T::LeafData,
 }
 
 /* ----------------------------------------- Misc Impls ----------------------------------------- */
@@ -466,6 +466,44 @@ impl<T: Element> Tree<T> {
             if c1.intersects(c2) {
                 errors.push_str(&format!("Leaf bounds {:?} and {:?} intersects\n", n1, n2));
             }
+        }
+
+        // Verify memory leak
+        let mut leaf_body_count = self.leaf_bodies.len();
+        let mut leaf_count = self.nodes.iter().filter(|x| x.1.is_leaf()).count();
+        let mut leaf_mask = vec![false; self.leaf_bodies.capacity()];
+
+        if leaf_body_count != leaf_count {
+            errors.push_str(&format!(
+                "Leaf body count {} mismatches leaf count {}\n",
+                leaf_body_count, leaf_count
+            ));
+        }
+
+        self.visit_leaves(|leaf_id| {
+            leaf_count -= 1;
+            let (leaf, _) = self.get_leaf_node(leaf_id).unwrap();
+
+            let occupied = replace(&mut leaf_mask[leaf.body_id as usize], true);
+
+            if occupied {
+                errors.push_str(&format!(
+                    "{:?} Leaf body {:?} is already occupied\n",
+                    leaf_id, leaf.body_id
+                ));
+            } else {
+                leaf_body_count -= 1;
+            }
+        });
+
+        if leaf_count != leaf_body_count {
+            errors.push_str(&format!(
+                "leaf_count {leaf_count} != leaf_body_count {leaf_body_count}\n"
+            ));
+        }
+
+        if leaf_count != 0 {
+            errors.push_str(&format!("leaf node is leaked (N: {leaf_count})\n"));
         }
 
         if errors.is_empty() {
