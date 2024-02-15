@@ -69,6 +69,10 @@ pub trait NumExt: Number {
     fn clamp_value(self, min: Self, max: Self) -> Self {
         self.min_value(max).max_value(min)
     }
+
+    fn sqr(self) -> Self {
+        self * self
+    }
 }
 
 impl<T: Number> NumExt for T {}
@@ -156,6 +160,10 @@ pub trait VectorExt: Vector {
 
     fn length_squared(&self) -> Self::Num {
         self.dot(self)
+    }
+
+    fn distance_squared(&self, other: &Self) -> Self::Num {
+        (self.sub(other)).length_squared()
     }
 }
 
@@ -330,14 +338,7 @@ impl<V: Vector> AabbRect<V> {
             nearest[i] = nearest[i].clamp_value(self.min[i], self.max[i]);
         }
 
-        let mut dist_sq = V::Num::zero();
-
-        for i in 0..V::D {
-            let diff = nearest[i] - center[i];
-            dist_sq = dist_sq + diff * diff;
-        }
-
-        dist_sq <= radius * radius
+        center.distance_squared(&nearest) <= radius.sqr()
     }
 
     /// Creates a new `AabbRect` with the given minimum and maximum vectors

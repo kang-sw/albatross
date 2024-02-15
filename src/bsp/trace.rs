@@ -32,12 +32,25 @@ impl<T: Element> Tree<T> {
         center: &T::Vector,
         radius: <T::Vector as Vector>::Num,
         query_margin: <T::Vector as Vector>::Num,
-        visit: impl FnMut(T::NodeKey, T::ElemKey),
+        mut visit: impl FnMut(T::NodeKey, T::ElemKey),
     ) {
         let region = AabbRect::new_circular(*center, radius + query_margin);
         self.query_region(&region.extended_by_all(query_margin), |node| {
             for (elem_id, elem) in self.leaf_iter(node) {
-                todo!()
+                let matches = match elem.data.extent() {
+                    TraceShape::Dot => center.distance_squared(&elem.pos) <= radius * radius,
+                    TraceShape::Sphere(rad) => {
+                        center.distance_squared(&elem.pos) <= (rad + radius).sqr()
+                    }
+                    TraceShape::Aabb(ext) => {
+                        let aabb = AabbRect::new_rectangular(elem.pos, ext);
+                        aabb.intersects_sphere(center, radius)
+                    }
+                };
+
+                if matches {
+                    visit(node, elem_id);
+                }
             }
         });
     }
