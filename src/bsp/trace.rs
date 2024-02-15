@@ -35,12 +35,41 @@ impl<T: Element> Tree<T> {
                 // falls within the radius.
 
                 let ext = elem.data.extent();
-                let rad = match ext {
-                    TraceShape::Dot => Number::ZERO,
-                    TraceShape::Sphere(rad) => rad,
-                    TraceShape::Aabb(ref ext) => ext
-                        .amp(((<T::Vector as Vector>::Num::ONE) + Number::ONE).inv())
-                        .norm(),
+                let s_rad_sum_sqr = match ext {
+                    TraceShape::Dot => radius.sqr(),
+                    TraceShape::Sphere(elem_rad) => (elem_rad + radius).sqr(),
+                    TraceShape::Aabb(ref ext) => {
+                        //
+                        // Tries to avoid calculating `norm` of the extent as much as
+                        // possible ... What we want here is filtering out following
+                        // expression:
+                        //
+                        //      D^2 > (R_aabb + R_capsule)^2
+                        //          = R_aabb^2 + 2*R_aabb*R_capsule + R_capsule^2
+                        //
+                        // However, here, we want to avoid calculating norm of the AABB
+                        // extent using sqrt, therefore we what we need here is
+                        //
+                        //      D^2 > R_aabb^2 + R_capsule^2 + Expr(R_aabb^2, R_capsule)
+                        //        where Expr(R_aabb^2, R_capsule) <= 2*R_aabb*R_capsule
+                        //
+                        // Here we simply replace R_aabb as the longest extent of the of
+                        // AABB(l), which is guaranteed to be shorter than the actual
+                        // radius, but still gives reasonable approximation and satisfies
+                        // the above condition:
+                        //
+                        //      2*l*R_capsule <= 2*R_aabb*R_capsule
+                        //
+                        let two = <T::Vector as Vector>::Num::from_int(2);
+                        let half_ext = ext.amp(two.inv());
+                        let r_aabb_sqr = half_ext.norm_sqr();
+                        let l = half_ext.max_component();
+
+                        // This is more tolerant approximation of the actual squared
+                        // distance. In case of AABB, it's not necessary to be precise
+                        // in this step as we're going to double-check it later.
+                        r_aabb_sqr + radius.sqr() + l * radius * two
+                    }
                 };
 
                 let s_h = (elem.pos.sub(start))
@@ -48,28 +77,15 @@ impl<T: Element> Tree<T> {
                     .clamp_value(Number::ZERO, s_norm);
 
                 let v_perpend = start.add(&u_d.amp(s_h));
-                let s_dist_sqr = elem.pos.distance_squared(&v_perpend);
+                let s_dist_sqr = elem.pos.dist_sqr(&v_perpend);
 
-                if s_dist_sqr > (rad + radius).square() {
+                if s_dist_sqr > s_rad_sum_sqr {
                     // Bounding sphere disjoints; early return
                     continue;
                 }
 
                 if let TraceShape::Aabb(ext) = ext {
                     // In case of AABB; apply more precise checks.
-
-                    // 0. 이 연산은 매우 무겁기 때문에, 우선 앞의 radius check를 통해
-                    //    1차적으로 필터링 수행.
-                    // 1. 각 초평면은 최소점, 최대점을 P로 두고, 축 방향을 n으로 한다.
-                    //    따라서, 2D에서는 4개, 3D에서는 6개, N에서는 N*2개의 초평면이
-                    //    발생.
-                    // 2. AABB 도형의 각 면(초평면)과 라인 세그먼트의 충돌점 계산. (t 가 1
-                    //    넘어가면; 충돌하지 않았다면 적정 범위에서 clamp)
-                    // 3. 충돌점을 초평면에서 주 축을 제외한 값을 clamp, 내부에 접하는지
-                    //    확인한다. (단, t가 normal range 벗어낫다면 절대 x) 만약
-                    //    내접한다면 충돌로 early return.
-                    // 4. 내접하지 않는다면, clamp 완료된 점에서 다시 선분과의 거리를
-                    //    계산한다. 전체 초평면에 대해 반복하고, 최소값이 거리가 된다.
 
                     // 0. Since this operation is very heavy, it first performs
                     //    preliminary filtering through a radius check. (line-bounding
@@ -89,6 +105,21 @@ impl<T: Element> Tree<T> {
                     // 4. If it does not touch internally, calculate the distance from the
                     //    clamped point to the line segment again. Repeat for all
                     //    hyperplanes, and the smallest value becomes the distance.
+
+                    // 0. 이 연산은 매우 무겁기 때문에, 우선 앞의 radius check를 통해
+                    //    1차적으로 필터링 수행.
+                    // 1. 각 초평면은 최소점, 최대점을 P로 두고, 축 방향을 n으로 한다.
+                    //    따라서, 2D에서는 4개, 3D에서는 6개, N에서는 N*2개의 초평면이
+                    //    발생.
+                    // 2. AABB 도형의 각 면(초평면)과 라인 세그먼트의 충돌점 계산. (t 가 1
+                    //    넘어가면; 충돌하지 않았다면 적정 범위에서 clamp)
+                    // 3. 충돌점을 초평면에서 주 축을 제외한 값을 clamp, 내부에 접하는지
+                    //    확인한다. (단, t가 normal range 벗어낫다면 절대 x) 만약
+                    //    내접한다면 충돌로 early return.
+                    // 4. 내접하지 않는다면, clamp 완료된 점에서 다시 선분과의 거리를
+                    //    계산한다. 전체 초평면에 대해 반복하고, 최소값이 거리가 된다.
+
+                    todo!()
                 }
 
                 visit(node, elem_id);
@@ -109,12 +140,8 @@ impl<T: Element> Tree<T> {
         self.query_region(&region.extended_by_all(query_margin), |node| {
             for (elem_id, elem) in self.leaf_iter(node) {
                 let matches = match elem.data.extent() {
-                    TraceShape::Dot => center.distance_squared(&elem.pos) <= radius * radius,
-
-                    TraceShape::Sphere(rad) => {
-                        center.distance_squared(&elem.pos) <= (rad + radius).square()
-                    }
-
+                    TraceShape::Dot => center.dist_sqr(&elem.pos) <= radius * radius,
+                    TraceShape::Sphere(rad) => center.dist_sqr(&elem.pos) <= (rad + radius).sqr(),
                     TraceShape::Aabb(ext) => {
                         let aabb = AabbRect::new_rectangular(elem.pos, ext);
                         aabb.intersects_sphere(center, radius)
@@ -138,9 +165,7 @@ impl<T: Element> Tree<T> {
             for (elem_id, elem) in self.leaf_iter(node) {
                 let matches = match elem.data.extent() {
                     TraceShape::Dot => region.contains(&elem.pos),
-
                     TraceShape::Sphere(rad) => region.intersects_sphere(&elem.pos, rad),
-
                     TraceShape::Aabb(ext) => {
                         let aabb = AabbRect::new_rectangular(elem.pos, ext);
                         region.intersects(&aabb)

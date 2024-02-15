@@ -22,6 +22,7 @@ pub trait Number:
 
     fn to_f64(&self) -> f64;
     fn from_f64(value: f64) -> Self;
+    fn from_int(value: i64) -> Self;
 
     fn try_sqrt(self) -> Option<Self> {
         None
@@ -66,7 +67,7 @@ pub trait NumExt: Number {
         self.min_value(max).max_value(min)
     }
 
-    fn square(self) -> Self {
+    fn sqr(self) -> Self {
         self * self
     }
 
@@ -185,7 +186,7 @@ pub trait VectorExt: Vector {
     }
 
     fn norm(&self) -> Self::Num {
-        self.length_squared().try_sqrt().unwrap()
+        self.norm_sqr().try_sqrt().unwrap()
     }
 
     fn dot(&self, other: &Self) -> Self::Num {
@@ -196,12 +197,12 @@ pub trait VectorExt: Vector {
         sum
     }
 
-    fn length_squared(&self) -> Self::Num {
+    fn norm_sqr(&self) -> Self::Num {
         self.dot(self)
     }
 
-    fn distance_squared(&self, other: &Self) -> Self::Num {
-        (self.sub(other)).length_squared()
+    fn dist_sqr(&self, other: &Self) -> Self::Num {
+        (self.sub(other)).norm_sqr()
     }
 }
 
@@ -254,6 +255,10 @@ mod _impl_fixed {
                 fn from_f64(value: f64) -> Self {
                     value as Self
                 }
+
+                fn from_int(value: i64) -> Self {
+                    value as Self
+                }
             })*
         };
     }
@@ -275,6 +280,11 @@ mod _impl_fixed {
                 fn from_f64(value: f64) -> Self {
                     value as Self
                 }
+
+                fn from_int(value: i64) -> Self {
+                    value as Self
+                }
+
                 fn try_sqrt(self) -> Option<Self> {
                     Some(self.sqrt())
                 }
@@ -298,6 +308,10 @@ mod _impl_fixed {
 
                 fn from_f64(value: f64) -> Self {
                     Self::from_num(value)
+                }
+
+                fn from_int(value: i64) -> Self {
+                    Self::const_from_int(value as _)
                 }
             }
         };
@@ -388,7 +402,7 @@ impl<V: Vector> AabbRect<V> {
             nearest[i] = nearest[i].clamp_value(self.min[i], self.max[i]);
         }
 
-        center.distance_squared(&nearest) <= radius.square()
+        center.dist_sqr(&nearest) <= radius.sqr()
     }
 
     /// Creates a new `AabbRect` with the given minimum and maximum vectors
@@ -433,6 +447,10 @@ impl<V: Vector> AabbRect<V> {
 
     pub fn max(&self) -> &V {
         &self.max
+    }
+
+    pub fn extent(&self) -> V {
+        self.max.sub(&self.min)
     }
 
     pub fn area(&self) -> V::Num {
