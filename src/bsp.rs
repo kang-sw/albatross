@@ -109,6 +109,18 @@ impl<T: Element> Tree<T> {
         }
     }
 
+    fn init_root_node(&mut self) {
+        let root_node = self.nodes.insert(TreeNode::Leaf(TreeNodeLeaf {
+            bound: AabbRect::maximum(),
+            head: T::ElemKey::null(),
+            tail: T::ElemKey::null(),
+            data: T::LeafData::default(),
+            len: 0,
+        }));
+
+        self.root = root_node;
+    }
+
     pub fn new() -> Self {
         Self::with_capacity(0)
     }
@@ -199,6 +211,13 @@ impl<T: Element> Tree<T> {
 
     pub fn split_info(&self, id: T::NodeKey) -> Option<&TreeNodeSplit<T>> {
         self.nodes.get(id).and_then(|node| node.as_split())
+    }
+
+    pub fn clear(&mut self) {
+        self.nodes.clear();
+        self.elems.clear();
+
+        self.init_root_node();
     }
 
     /// # Panics

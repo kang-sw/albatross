@@ -53,6 +53,8 @@ pub struct OptimizeParameter {
     /// have become sufficiently populated to warrant division into smaller nodes,
     /// thereby optimizing spatial queries by maintaining a balanced distribution of
     /// elements across the tree.
+    ///
+    /// This value should at least be 2.
     pub split_threshold: u32,
 
     /// Specifies the maximum number of elements a node can contain before it is
@@ -292,8 +294,8 @@ impl<T: Element> Tree<T> {
 
         let root = self.root;
         let context = &mut (self, &mut on_update, params);
-        recurse_phase_1(context, root);
-        recurse_phase_2(context, root);
+        recurse_phase_1_collapse(context, root);
+        recurse_phase_2_split(context, root);
         recurse_phase_3_validate(context.0, root);
     }
 }
@@ -319,7 +321,7 @@ macro_rules! f {
     };
 }
 
-pub(crate) fn recurse_phase_1<T: Element>(
+pub(crate) fn recurse_phase_1_collapse<T: Element>(
     context: &mut (
         &mut Tree<T>,
         &mut impl FnMut(OptimizationEvent<T::NodeKey>),
@@ -334,8 +336,8 @@ pub(crate) fn recurse_phase_1<T: Element>(
             initial_balance,
             ..
         }) => {
-            let r_m = recurse_phase_1(context, minus);
-            let r_p = recurse_phase_1(context, plus);
+            let r_m = recurse_phase_1_collapse(context, minus);
+            let r_p = recurse_phase_1_collapse(context, plus);
             let height = r_m.height.max(r_p.height);
 
             let params = f!(context.params);
@@ -381,7 +383,11 @@ pub(crate) fn recurse_phase_1<T: Element>(
                     balance_rate < params.balancing
                 };
 
-                unbalanced || total <= params.collapse_threshold as usize
+                let collapse_thres = params
+                    .collapse_threshold
+                    .min(params.split_threshold.max(1) - 1);
+
+                unbalanced || total <= collapse_thres as usize
             };
 
             if collapse {
@@ -511,7 +517,7 @@ pub(crate) fn impl_collapse_recursive<T: Element>(
 }
 
 /* ----------------------------------- Phase 2: Split ----------------------------------- */
-pub(crate) fn recurse_phase_2<T: Element>(
+pub(crate) fn recurse_phase_2_split<T: Element>(
     context: &mut (
         &mut Tree<T>,
         &mut impl FnMut(OptimizationEvent<T::NodeKey>),
@@ -522,23 +528,21 @@ pub(crate) fn recurse_phase_2<T: Element>(
     match f!(context.tree).nodes[node] {
         TreeNode::Split(TreeNodeSplit { minus, plus, .. }) => {
             // This is dead simple; just visit children nodes.
-            recurse_phase_2(context, minus);
-            recurse_phase_2(context, plus);
+            recurse_phase_2_split(context, minus);
+            recurse_phase_2_split(context, plus);
 
             return; // Returns early.
         }
-        TreeNode::Leaf(TreeNodeLeaf {
-            bound, head, len, ..
-        }) => {
+        TreeNode::Leaf(TreeNodeLeaf { bound, len, .. }) => {
             let (tree, on_update, params) = context;
 
-            if (len as usize) < params.split_threshold.max(1) as usize {
+            if (len as usize) < params.split_threshold.max(2) as usize {
                 //            ^^ Makes zero always return.
                 return;
             }
 
             // FIXME: Remove this magic number!
-            const SQUARE_SPLIT_CAP: f64 = 64.;
+            const SQUARE_SPLIT_CAP: f64 = 8.;
 
             let mut bound_lengths = T::Vector::zero_f64();
             let bound_length_thr = (params.minimum_length * 2.).max(1e-4);
@@ -664,7 +668,7 @@ pub(crate) fn recurse_phase_2<T: Element>(
             split_at = split_at.clamp(split_min, split_max);
 
             let split_at = <T::Vector as Vector>::Num::from_f64(split_at);
-            let (minus_id, plus_id) = split_tree(tree, bound, axis, split_at, head, node);
+            let (minus_id, plus_id) = split_tree_at(tree, node, axis, split_at);
 
             // Notify split
             on_update(OptimizationEvent::Split {
@@ -684,21 +688,22 @@ pub(crate) fn recurse_phase_2<T: Element>(
         }
     };
 
-    recurse_phase_2(context, minus);
-    recurse_phase_2(context, plus);
+    recurse_phase_2_split(context, minus);
+    recurse_phase_2_split(context, plus);
 }
 
-fn split_tree<T: Element>(
+fn split_tree_at<T: Element>(
     tree: &mut Tree<T>,
-    bound: AabbRect<<T as Element>::Vector>,
+    node: <T as Element>::NodeKey,
     axis: usize,
     split_at: <<T as Element>::Vector as Vector>::Num,
-    head: <T as Element>::ElemKey,
-    node: <T as Element>::NodeKey,
 ) -> (<T as Element>::NodeKey, <T as Element>::NodeKey) {
     // Create new splitted subnodes.
-    let minus = { bound }.tap_mut(|x| x.split_minus(axis, split_at));
-    let plus = { bound }.tap_mut(|x| x.split_plus(axis, split_at));
+    let leaf = tree.nodes[node].as_leaf().unwrap();
+
+    let head = leaf.head;
+    let minus = { leaf.bound }.tap_mut(|x| x.split_minus(axis, split_at));
+    let plus = { leaf.bound }.tap_mut(|x| x.split_plus(axis, split_at));
 
     let minus_id = tree.nodes.insert(TreeNode::Leaf(TreeNodeLeaf {
         bound: minus,
@@ -821,10 +826,7 @@ impl<T: Element> Tree<T> {
     ///
     /// Panics if `node` is not a valid leaf node.
     pub fn node_split_at(&mut self, node: T::NodeKey, axis: usize, at: <T::Vector as Vector>::Num) {
-        let leaf_node = self.nodes.get(node).unwrap().as_leaf().unwrap();
-        let bound = leaf_node.bound;
-
-        split_tree(self, bound, axis, at, leaf_node.head, node);
+        split_tree_at(self, node, axis, at);
         recurse_phase_3_validate(self, node);
     }
 
