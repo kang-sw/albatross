@@ -45,6 +45,34 @@ pub trait Vector:
     fn set(&mut self, i: AxisIndex, value: Self::Num);
 }
 
+pub type AxisIndex = usize;
+
+/* -------------------------------------------- Exts -------------------------------------------- */
+
+pub trait NumExt: Number {
+    fn min_value(self, other: Self) -> Self {
+        if self < other {
+            self
+        } else {
+            other
+        }
+    }
+
+    fn max_value(self, other: Self) -> Self {
+        if self > other {
+            self
+        } else {
+            other
+        }
+    }
+
+    fn clamp_value(self, min: Self, max: Self) -> Self {
+        self.min_value(max).max_value(min)
+    }
+}
+
+impl<T: Number> NumExt for T {}
+
 pub trait VectorExt: Vector {
     fn minimum() -> Self {
         let mut v = Self::zero();
@@ -77,35 +105,63 @@ pub trait VectorExt: Vector {
         }
         v
     }
-}
 
-pub type AxisIndex = usize;
-
-/* -------------------------------------------- Exts -------------------------------------------- */
-
-pub trait NumExt: Number {
-    fn min_value(self, other: Self) -> Self {
-        if self < other {
-            self
-        } else {
-            other
+    fn values(&self, value: Self::Num) -> Self {
+        let mut v = Self::zero();
+        for i in 0..Self::D {
+            v.set(i, value);
         }
+        v
     }
 
-    fn max_value(self, other: Self) -> Self {
-        if self > other {
-            self
-        } else {
-            other
+    fn sub(&self, other: &Self) -> Self {
+        let mut v = Self::zero();
+        for i in 0..Self::D {
+            v.set(i, self.get(i) - other.get(i));
         }
+        v
+    }
+
+    fn add(&self, other: &Self) -> Self {
+        let mut v = Self::zero();
+        for i in 0..Self::D {
+            v.set(i, self.get(i) + other.get(i));
+        }
+        v
+    }
+
+    fn mul(&self, other: &Self) -> Self {
+        let mut v = Self::zero();
+        for i in 0..Self::D {
+            v.set(i, self.get(i) * other.get(i));
+        }
+        v
+    }
+
+    fn div(&self, other: &Self) -> Self {
+        let mut v = Self::zero();
+        for i in 0..Self::D {
+            v.set(i, self.get(i) / other.get(i));
+        }
+        v
+    }
+
+    fn dot(&self, other: &Self) -> Self::Num {
+        let mut sum = Self::Num::zero();
+        for i in 0..Self::D {
+            sum = sum + self.get(i) * other.get(i);
+        }
+        sum
+    }
+
+    fn length_squared(&self) -> Self::Num {
+        self.dot(self)
     }
 }
-
-impl<T: Number> NumExt for T {}
-
-/* ------------------------------------------ Defaults ------------------------------------------ */
 
 impl<T: Vector> VectorExt for T {}
+
+/* ------------------------------------------ Defaults ------------------------------------------ */
 
 impl<T: Number, const D: usize> Vector for [T; D] {
     type Num = T;
@@ -239,6 +295,8 @@ impl<V: Vector> AabbRect<V> {
 
     /// Build new rectangle from circular components.
     pub fn new_circular(center: V, radius: V::Num) -> Self {
+        assert!(radius >= V::Num::zero());
+
         let mut min = center;
         let mut max = center;
 
@@ -248,6 +306,38 @@ impl<V: Vector> AabbRect<V> {
         }
 
         Self { min, max }
+    }
+
+    pub fn new_rectangular(center: V, extent: V) -> Self {
+        let mut min = center;
+        let mut max = center;
+
+        for i in 0..V::D {
+            let half = extent[i] / (V::Num::one() + V::Num::one());
+            assert!(half >= V::Num::zero());
+
+            min[i] = min[i] - half;
+            max[i] = max[i] + half;
+        }
+
+        Self { min, max }
+    }
+
+    pub fn intersects_sphere(&self, center: &V, radius: V::Num) -> bool {
+        let mut nearest = *center;
+
+        for i in 0..V::D {
+            nearest[i] = nearest[i].clamp_value(self.min[i], self.max[i]);
+        }
+
+        let mut dist_sq = V::Num::zero();
+
+        for i in 0..V::D {
+            let diff = nearest[i] - center[i];
+            dist_sq = dist_sq + diff * diff;
+        }
+
+        dist_sq <= radius * radius
     }
 
     /// Creates a new `AabbRect` with the given minimum and maximum vectors
@@ -349,13 +439,29 @@ impl<V: Vector> AabbRect<V> {
         false
     }
 
-    pub fn extend_by(&self, value: V::Num) -> Self {
+    pub fn extended_by_all(&self, value: V::Num) -> Self {
         let mut min = self.min;
         let mut max = self.max;
 
         for i in 0..V::D {
             min[i] = min[i] - value;
             max[i] = max[i] + value;
+
+            if min[i] > max[i] {
+                std::mem::swap(&mut min[i], &mut max[i]);
+            }
+        }
+
+        Self { min, max }
+    }
+
+    pub fn extended_by(&self, extend: &V) -> Self {
+        let mut min = self.min;
+        let mut max = self.max;
+
+        for i in 0..V::D {
+            min[i] = min[i] - extend[i];
+            max[i] = max[i] + extend[i];
 
             if min[i] > max[i] {
                 std::mem::swap(&mut min[i], &mut max[i]);
@@ -386,6 +492,18 @@ impl<V: Vector> AabbRect<V> {
             self.min[i] = self.min[i].max_value(other.min[i]);
             self.max[i] = self.max[i].min_value(other.max[i]);
         }
+    }
+
+    pub fn intersection(&self, other: &Self) -> Self {
+        let mut min = self.min;
+        let mut max = self.max;
+
+        for i in 0..V::D {
+            min[i] = min[i].max_value(other.min[i]);
+            max[i] = max[i].min_value(other.max[i]);
+        }
+
+        Self { min, max }
     }
 
     pub fn split_minus(&mut self, axis: AxisIndex, value: V::Num) {

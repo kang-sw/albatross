@@ -1,4 +1,5 @@
 mod optimize;
+mod trace;
 
 use std::mem::replace;
 
@@ -10,9 +11,26 @@ use tap::Tap;
 
 pub use optimize::*;
 
+/// Maximum count of axis that can be used in BSP tree.
+pub const NUM_MAX_AXIS: usize = 64;
+
 /* ---------------------------------------------------------------------------------------------- */
 /*                                               BSP                                              */
 /* ---------------------------------------------------------------------------------------------- */
+
+/// A shape descriptor for an element.
+#[derive(Clone, Copy, Default)]
+pub enum TraceShape<V: Vector> {
+    /// Dot without any volume.
+    #[default]
+    Dot,
+
+    /// Value is extent of each axis for AABB.
+    Aabb(V),
+
+    /// Value is radius for sphere.
+    Sphere(V::Num),
+}
 
 /// A trait which represents actual data type of BSP.
 pub trait Element {
@@ -25,6 +43,16 @@ pub trait Element {
 
     /// Mark this element moved.
     fn relocated(&mut self, _owner: Self::NodeKey) {}
+
+    /// Returns the radius of this element. This does not affect to BSP tree itself,
+    /// however, referred by tracing methods when evaluating collision.
+    ///
+    /// It does not provide 100% perfect result when the shape is much larger than minimum
+    /// split size or at some corner cases. Therefore it is recommended to set some margin
+    /// when evaluating collision rectangle.
+    fn extent(&self) -> TraceShape<Self::Vector> {
+        Default::default()
+    }
 }
 
 /// A BSP tree implementation. Hard limit of tree depth is 65,535.
