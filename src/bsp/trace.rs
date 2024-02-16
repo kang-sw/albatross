@@ -6,6 +6,28 @@ use crate::{
 use super::{Element, TraceShape, Tree, TreeElement};
 
 impl<T: Element> Tree<T> {
+    pub fn trace(
+        &self,
+        p_pivot: &T::Vector,
+        shape: &TraceShape<T::Vector>,
+        query_margin: <T::Vector as Vector>::Num,
+        visit: impl FnMut(T::NodeKey, T::ElemKey, &TreeElement<T>),
+    ) {
+        match shape {
+            TraceShape::Aabb(ext) => {
+                let region = AabbRect::new_extent(*p_pivot, *ext);
+                self.trace_aabb(&region, query_margin, visit);
+            }
+            TraceShape::Sphere(rad) => {
+                self.trace_sphere(p_pivot, *rad, query_margin, visit);
+            }
+            TraceShape::Capsule { dir, radius } => {
+                let p_end = p_pivot.add(&dir.calc_v_dir());
+                self.trace_capsule(p_pivot, &p_end, *radius, query_margin, visit);
+            }
+        }
+    }
+
     pub fn trace_capsule(
         &self,
         p_start: &T::Vector,
