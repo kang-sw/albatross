@@ -771,4 +771,8 @@ impl<V: Vector> DirectionSegment<V> {
     pub fn u_dir(&self) -> &V {
         &self.u_dir
     }
+
+    pub fn calc_v_dir(&self) -> V {
+        self.u_dir.amp(self.s_len)
+    }
 }
