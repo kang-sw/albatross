@@ -162,6 +162,7 @@ pub mod check {
         c2_line: &LineSegment<V>,
         c2_r: V::Num,
     ) -> bool {
+        // FIXME: Broken Logic
         c1_line.dist_line_sqr(c2_line) <= (c1_r + c2_r).sqr()
     }
 }

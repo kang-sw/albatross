@@ -8,7 +8,7 @@ use albatross::{
 use egui::RichText;
 use web_time::Instant;
 
-use self::boids::BOID_TRACE_EXTENT;
+use self::boids::{BOID_SIZE, BOID_TRACE_EXTENT};
 
 #[derive(Default)]
 pub struct TemplateApp {
@@ -219,7 +219,7 @@ impl eframe::App for TemplateApp {
                             )
                             .clicked()
                         {
-                            self.collision_test = CollisionTestMode::Capsule(0.0);
+                            self.collision_test = CollisionTestMode::Capsule(1.0);
                         }
                     });
 
@@ -303,19 +303,19 @@ impl eframe::App for TemplateApp {
                                 .radio(matches!(ext, TraceShape::Aabb(..)), "AABB")
                                 .clicked()
                             {
-                                Some(TraceShape::Aabb(Default::default()))
+                                Some(TraceShape::Aabb([BOID_SIZE * 2., BOID_SIZE * 2.]))
                             } else if c[1]
                                 .radio(matches!(ext, TraceShape::Sphere(..)), "Sphere")
                                 .clicked()
                             {
-                                Some(TraceShape::Sphere(Default::default()))
+                                Some(TraceShape::Sphere(BOID_SIZE))
                             } else if c[2]
                                 .radio(matches!(ext, TraceShape::Capsule { .. }), "Capsule")
                                 .clicked()
                             {
                                 Some(TraceShape::Capsule {
-                                    dir: DirectionSegment::new([0., 0.1]),
-                                    radius: 0.0,
+                                    dir: DirectionSegment::new([0., BOID_SIZE * 2.]),
+                                    radius: BOID_SIZE,
                                 })
                             } else {
                                 None

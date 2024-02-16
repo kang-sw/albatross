@@ -10,21 +10,26 @@ impl<T: Element> Tree<T> {
         &self,
         p_pivot: &T::Vector,
         shape: &TraceShape<T::Vector>,
+        query_margin: <T::Vector as Vector>::Num,
         visit_leaf: impl FnMut(T::NodeKey),
     ) {
         match shape {
             TraceShape::Aabb(ext) => {
-                let region = AabbRect::new_extent(*p_pivot, *ext);
+                let region = AabbRect::new_extent(*p_pivot, *ext).extended_by_all(query_margin);
                 self.query_region(&region, visit_leaf);
             }
             TraceShape::Sphere(rad) => {
-                let region = AabbRect::new_circular(*p_pivot, *rad);
+                let region = AabbRect::new_circular(*p_pivot, *rad).extended_by_all(query_margin);
                 self.query_region(&region, visit_leaf);
             }
             TraceShape::Capsule { dir, radius } => {
-                let cutter =
-                    create_line_region_cutter(*p_pivot, p_pivot.add(&dir.calc_v_dir()), *radius);
-                let region = AabbRect::new(*p_pivot, p_pivot.add(&dir.calc_v_dir()));
+                let cutter = create_line_region_cutter(
+                    *p_pivot,
+                    p_pivot.add(&dir.calc_v_dir()),
+                    *radius + query_margin,
+                );
+                let region = AabbRect::new(*p_pivot, p_pivot.add(&dir.calc_v_dir()))
+                    .extended_by_all(*radius + query_margin);
                 self.query_region_with_cutter(&region, visit_leaf, cutter);
             }
         }
