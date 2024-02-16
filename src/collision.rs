@@ -21,15 +21,12 @@ pub mod intersects {
         capsule_line.distance_from_sqr(c) < (capsule_r + r).sqr()
     }
 
-    #[inline]
-    pub fn capsule_aabb<V: Vector>(
+    pub fn capsule_center_extent<V: Vector>(
         capsule_line: &LineSegment<V>,
         capsule_r: V::Num,
-        aabb: &AabbRect<V>,
+        center: &V,
+        extent: &V,
     ) -> bool {
-        // Preliminary filtering
-        let ext = aabb.extent();
-
         //
         // Tries to avoid calculating `norm` of the extent as much as
         // possible ... What we want here is filtering out following
@@ -52,7 +49,7 @@ pub mod intersects {
         //      Expr = 2*l*R_capsule <= 2*R_aabb*R_capsule
         //
         let two = <V::Num as Number>::from_int(2);
-        let half_ext = ext.amp(two.inv());
+        let half_ext = extent.amp(two.inv());
 
         {
             let r_aabb_sqr = half_ext.norm_sqr();
@@ -63,7 +60,7 @@ pub mod intersects {
             // in this step as we're going to double-check it later.
             let approx_dist_sqr = r_aabb_sqr + capsule_r.sqr() + l * capsule_r * two;
 
-            if approx_dist_sqr < capsule_line.distance_from_sqr(&aabb.center()) {
+            if approx_dist_sqr < capsule_line.distance_from_sqr(center) {
                 // Bounding sphere disjoints; early return. This false return always
                 // valid; i.e. There's no false negative.
                 return false;
@@ -102,8 +99,8 @@ pub mod intersects {
         // 4. 내접하지 않는다면, clamp 완료된 점에서 다시 선분과의 거리를
         //    계산한다. 전체 초평면에 대해 반복하고, 최소값이 거리가 된다.
 
-        let v_min = aabb.min();
-        let v_max = aabb.max();
+        let v_min = center.sub(&half_ext);
+        let v_max = center.add(&half_ext);
         let line = capsule_line;
         let line_p_end = line.calc_p_end();
 
@@ -121,7 +118,7 @@ pub mod intersects {
                     line.p_start.add(&line.u_d().amp(t))
                 } else {
                     // Any point is allowed.
-                    *v_plane_p
+                    v_plane_p
                 };
 
                 // The collision point MUST be on the plane.
@@ -149,5 +146,55 @@ pub mod intersects {
         }
 
         false
+    }
+
+    #[inline]
+    pub fn capsule_capsule<V: Vector>(
+        c1_line: &LineSegment<V>,
+        c1_r: V::Num,
+        c2_line: &LineSegment<V>,
+        c2_r: V::Num,
+    ) -> bool {
+        todo!()
+    }
+}
+
+#[cfg(test)]
+mod __tests {
+    use super::intersects;
+
+    #[test]
+    fn test_sphere_sphere() {
+        // Fully intersected
+        assert!(intersects::sphere_sphere(
+            &[0.0, 0.0],
+            1.0,
+            &[0.0, 0.0],
+            1.0
+        ));
+
+        // Partially intersected
+        assert!(intersects::sphere_sphere(
+            &[0.0, 1.0],
+            1.0,
+            &[0.0, 0.0],
+            1.0
+        ));
+
+        // Joint
+        assert!(intersects::sphere_sphere(
+            &[0.0, 2.0],
+            1.0,
+            &[0.0, 0.0],
+            1.0
+        ));
+
+        // Disjoint
+        assert!(!intersects::sphere_sphere(
+            &[0.0, 3.0],
+            1.0,
+            &[0.0, 0.0],
+            1.0
+        ));
     }
 }
