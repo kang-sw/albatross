@@ -178,7 +178,27 @@ pub fn create_line_region_cutter<V: Vector>(
 ) -> impl Fn(&AabbRect<V>, AxisIndex, V::Num) -> [AabbRect<V>; 2] {
     // FIXME: Broken logic
 
-    let dir = end.sub(&start);
+    let v_dir = end.sub(&start);
+    let dir_norm = v_dir.norm();
+    let u_dir = v_dir.amp(dir_norm.inv());
+
+    // Cache thetas for each axis
+    let v_mergins = V::from_fn(|i| {
+        let unit = V::unit(i);
+        let cos_theta = unit.dot(&u_dir);
+
+        // We don't need sign of sin_theta; just calculate abs quickly.
+        let sin = (V::Num::ONE - cos_theta.sqr()).sqrt();
+        query_margin
+            * if sin.is_zero() {
+                // Just use a large value to avoid division by zero.
+                V::Num::from_int(1000)
+            } else {
+                sin.inv()
+            }
+    });
+
+    let base_region = AabbRect::new(start, end).extended_by_all(query_margin);
 
     move |_, axis, value| {
         // Cut single axis of plane affects the rest when the shape is linear.
@@ -190,17 +210,38 @@ pub fn create_line_region_cutter<V: Vector>(
         let t = if base.is_zero() {
             Number::ONE
         } else {
-            (value - v_start) / (v_end - v_start)
+            (value - v_start) / base
         };
 
-        let p_t = start.add(&dir.amp(t));
+        let p_pvt = start.add(&v_dir.amp(t));
         let [p_minus, p_plus] = if v_start <= v_end {
             [start, end]
         } else {
             [end, start]
         };
 
-        [AabbRect::new(p_minus, p_t), AabbRect::new(p_t, p_plus)]
-            .map(|x| x.extended_by_all(query_margin * Number::from_int(3) / Number::from_int(2)))
+        // When slicing through a thick plane, the slanted cross-section extends beyond
+        // the query margin.
+        //
+        // Specifically, for the angle theta between the axis-aligned hyperplane and the
+        // line segment, the length increases by margin / sin(theta). Hence, we expand the
+        // dimension along the axis by the query margin, and the other dimensions by
+        // query_margin / sin(theta), and then intersect this expanded area with the base
+        // range.
+
+        [AabbRect::new(p_minus, p_pvt), AabbRect::new(p_pvt, p_plus)].map(|mut x| {
+            for i in 0..V::D {
+                if i == axis {
+                    x.expand_axis(i, query_margin);
+                    x.expand_axis(i, query_margin.neg());
+                } else {
+                    let mult = v_mergins[i];
+                    x.expand_axis(i, mult);
+                    x.expand_axis(i, mult.neg());
+                }
+            }
+
+            x.intersection(&base_region)
+        })
     }
 }
