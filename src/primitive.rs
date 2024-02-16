@@ -26,10 +26,6 @@ pub trait Number:
     fn from_f64(value: f64) -> Self;
     fn from_int(value: i64) -> Self;
 
-    fn neg(self) -> Self {
-        unimplemented!()
-    }
-
     fn sqrt(self) -> Self {
         unimplemented!()
     }
@@ -82,6 +78,18 @@ pub trait NumExt: Number {
             self
         } else {
             other
+        }
+    }
+
+    fn neg(self) -> Self {
+        Self::ZERO - self
+    }
+
+    fn abs(self) -> Self {
+        if self < Self::ZERO {
+            self.neg()
+        } else {
+            self
         }
     }
 
@@ -247,7 +255,7 @@ mod _impl_fixed {
         /* --------------------------------------- Basics --------------------------------------- */
 
         (i, $($ty:ty), *) => {
-            $(define_minmax!(base, $ty, def_neg);)*
+            $(define_minmax!(base, $ty);)*
         };
 
         (u, $($ty:ty), *) => {
@@ -255,7 +263,7 @@ mod _impl_fixed {
         };
 
         (f, $($ty:ty), *) => {
-            $(define_minmax!(base, $ty, def_neg, def_math, def_rsqrt);)*
+            $(define_minmax!(base, $ty, def_math, def_rsqrt);)*
         };
 
         /* -------------------------------------- Utilities ------------------------------------- */
@@ -307,12 +315,6 @@ mod _impl_fixed {
             }
         };
 
-        (def_neg) => {
-            fn neg(self) -> Self {
-                -self
-            }
-        };
-
         (def_math) => {
             fn sqrt(self) -> Self {
                 self.sqrt()
@@ -337,15 +339,15 @@ mod _impl_fixed {
     define_minmax!(u, u8, u16, u32, u64, u128, usize);
     define_minmax!(f, f32, f64);
 
-    define_minmax!(fx, FixedI8<T>, LeEqU8, def_neg);
+    define_minmax!(fx, FixedI8<T>, LeEqU8);
     define_minmax!(fx, FixedU8<T>, LeEqU8);
-    define_minmax!(fx, FixedI16<T>, LeEqU16, def_neg);
+    define_minmax!(fx, FixedI16<T>, LeEqU16);
     define_minmax!(fx, FixedU16<T>, LeEqU16);
-    define_minmax!(fx, FixedI32<T>, LeEqU32, def_neg);
+    define_minmax!(fx, FixedI32<T>, LeEqU32);
     define_minmax!(fx, FixedU32<T>, LeEqU32);
-    define_minmax!(fx, FixedI64<T>, LeEqU64, def_neg);
+    define_minmax!(fx, FixedI64<T>, LeEqU64);
     define_minmax!(fx, FixedU64<T>, LeEqU64);
-    define_minmax!(fx, FixedI128<T>, LeEqU128, def_neg);
+    define_minmax!(fx, FixedI128<T>, LeEqU128);
     define_minmax!(fx, FixedU128<T>, LeEqU128);
 }
 
@@ -558,12 +560,9 @@ impl<V: Vector> AabbRect<V> {
         Self { min, max }
     }
 
-    pub fn expand_axis(&mut self, axis: AxisIndex, value: V::Num) {
-        if value > V::Num::ZERO {
-            self.min[axis] = self.min[axis] - value;
-        } else {
-            self.max[axis] = self.max[axis] - value;
-        }
+    pub fn extend_axis(&mut self, axis: AxisIndex, value: V::Num) {
+        self.min[axis] = self.min[axis] - value;
+        self.max[axis] = self.max[axis] + value;
     }
 
     pub fn move_by(&self, value: V) -> Self {

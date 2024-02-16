@@ -194,7 +194,7 @@ pub fn create_line_region_cutter<V: Vector>(
                 // Just use a large value to avoid division by zero.
                 V::Num::from_int(1000)
             } else {
-                sin.inv()
+                sin.inv().abs()
             }
     });
 
@@ -232,12 +232,9 @@ pub fn create_line_region_cutter<V: Vector>(
         [AabbRect::new(p_minus, p_pvt), AabbRect::new(p_pvt, p_plus)].map(|mut x| {
             for i in 0..V::D {
                 if i == axis {
-                    x.expand_axis(i, query_margin);
-                    x.expand_axis(i, query_margin.neg());
+                    x.extend_axis(axis, query_margin)
                 } else {
-                    let mult = v_mergins[i];
-                    x.expand_axis(i, mult);
-                    x.expand_axis(i, mult.neg());
+                    x.extend_axis(i, v_mergins[i])
                 }
             }
 
