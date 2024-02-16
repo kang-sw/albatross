@@ -1,14 +1,14 @@
 use std::{
     cell::Cell,
-    collections::{BTreeSet, VecDeque},
+    collections::{BTreeSet, HashSet, VecDeque},
 };
 
 use albatross::{
     bitindex::BitIndexSet,
     bsp::{self, OptimizeParameter, TraceShape},
-    primitive::AabbRect,
+    primitive::{AabbRect, VectorExt},
 };
-use egui::Stroke;
+use egui::{Color32, Stroke};
 use nalgebra::Vector2;
 use web_time::Instant;
 
@@ -81,6 +81,7 @@ pub struct Model {
     pub stat_max_record: usize,
 
     stats: VecDeque<Stats>,
+    hit_test: Option<([f32; 2], TraceShape<[f32; 2]>, f32)>,
 }
 
 #[derive(Default)]
@@ -120,6 +121,7 @@ impl Default for Model {
             }),
 
             stats: Default::default(),
+            hit_test: None,
         }
     }
 }
@@ -388,6 +390,14 @@ impl Model {
         self.ecs.clear();
         self.bsp.clear();
     }
+
+    pub fn set_hit_test(&mut self, origin: [f32; 2], trace: TraceShape<[f32; 2]>, margin: f32) {
+        self.hit_test = Some((origin, trace, margin));
+    }
+
+    pub fn clear_hit_test(&mut self) {
+        self.hit_test = None;
+    }
 }
 
 /* ---------------------------------------- Rendering --------------------------------------- */
@@ -422,6 +432,33 @@ impl Model {
         let (resp, p) = ui.allocate_painter(ui_size, egui::Sense::click_and_drag());
         let offset = *offset;
         let zoom = (*zoom).max(0.001);
+
+        let mut hit_test_grids = HashSet::new();
+        let mut hit_test_elems = Vec::new();
+
+        let hit_test = self.hit_test.map(|(center, mut shape, margin)| {
+            // Coordinates should be converted to world space
+            let center = to_world(center.into(), offset, zoom);
+            match &mut shape {
+                TraceShape::Aabb(x) => *x = x.amp(1. / zoom),
+                TraceShape::Sphere(rad) => *rad /= zoom,
+                TraceShape::Capsule { dir, .. } => {
+                    dir.s_len /= zoom;
+                }
+            }
+
+            (center, shape, margin)
+        });
+
+        if let Some((center, shape, margin)) = hit_test {
+            hit_test_grids.reserve(10);
+            hit_test_elems.reserve(128);
+
+            self.bsp.trace(&center, &shape, margin, |node, elem, _| {
+                hit_test_grids.insert(node);
+                hit_test_elems.push(elem);
+            });
+        }
 
         if *draw_grid {
             // Highlight hierarchy on cursor position.
@@ -491,6 +528,8 @@ impl Model {
 
                 other_rects.push(leaf_bound);
 
+                // Render big text at position to visualize hierarchy
+
                 for (depth, &rect) in other_rects.iter().enumerate().rev() {
                     let center = rect.center();
                     let mut size = rect.length(0).min(rect.length(1)) / 8.;
@@ -507,6 +546,8 @@ impl Model {
 
                 draw_rect(&leaf_bound, egui::Color32::WHITE);
             }
+
+            // Render text on leaf nodes
 
             self.bsp
                 .visit_leaves_with_depth(self.bsp.root(), |depth, leaf| {
@@ -544,6 +585,46 @@ impl Model {
                         Stroke { width: 1.0, color },
                     );
                 });
+
+            // Highlight tests that matches the shape exactly.
+
+            if let Some((center, shape, _)) = hit_test {
+                self.bsp.query_shape(&center, &shape, |leaf| {
+                    let bound = self.bsp.leaf_bound(leaf);
+                    let min = to_screen((*bound.min()).into(), offset, zoom);
+                    let max = to_screen((*bound.max()).into(), offset, zoom);
+
+                    p.rect(
+                        egui::Rect::from_min_max(min.into(), max.into()),
+                        0.0,
+                        egui::Color32::from_rgba_unmultiplied(0, 0, 255, 21),
+                        Stroke {
+                            width: 1.0,
+                            color: egui::Color32::BLUE,
+                        },
+                    );
+                });
+            }
+
+            // Highlight tests that was actually hit
+
+            for leaf in hit_test_grids.iter().cloned() {
+                let mut bound = *self.bsp.leaf_bound(leaf);
+                bound.apply_intersection(&AabbRect::new_circular([0., 0.], self.area_radius));
+
+                let min = to_screen((*bound.min()).into(), offset, zoom);
+                let max = to_screen((*bound.max()).into(), offset, zoom);
+
+                p.rect(
+                    egui::Rect::from_min_max(min.into(), max.into()),
+                    0.0,
+                    egui::Color32::from_rgba_unmultiplied(255, 0, 0, 18),
+                    Stroke {
+                        width: 1.0,
+                        color: egui::Color32::RED,
+                    },
+                );
+            }
         }
 
         // Draw cage
@@ -586,10 +667,46 @@ impl Model {
             );
         }
 
+        if let Some((origin, shape, ..)) = hit_test {
+            // TODO: Render hit test region
+            let color_bg = egui::Color32::from_rgba_unmultiplied(255, 0, 255, 17);
+            let stroke = egui::Stroke {
+                width: 1.,
+                color: Color32::from_rgb(255, 0, 255),
+            };
+
+            match shape {
+                TraceShape::Aabb(ext) => {
+                    let aabb = AabbRect::new_extent(origin, ext);
+                    let min = to_screen((*aabb.min()).into(), offset, zoom);
+                    let max = to_screen((*aabb.max()).into(), offset, zoom);
+
+                    p.rect(
+                        egui::Rect::from_min_max(min.into(), max.into()),
+                        0.,
+                        color_bg,
+                        stroke,
+                    );
+                }
+                TraceShape::Sphere(rad) => {
+                    let center = to_screen(origin.into(), offset, zoom);
+                    let rad = rad * zoom;
+
+                    p.circle(center.into(), rad, color_bg, stroke);
+                }
+                TraceShape::Capsule { dir, radius } => {
+                    // 1. Draw two circles connects start-end point
+                    // 2. Draw a line between two circles
+                    //    - This is a line connects two circles' center, and offset by
+                    //      radius to its orthogonal direction respectively.
+                }
+            }
+
+            // TODO: Visualize query hit elements
+        }
+
         resp
     }
-
-    pub fn draw_trace(&self, ui: &mut egui::Ui, origin: [f32; 2], trace: TraceShape<[f32; 2]>) {}
 }
 
 pub fn to_world(screen: egui::Pos2, offset: [f32; 2], zoom: f32) -> [f32; 2] {

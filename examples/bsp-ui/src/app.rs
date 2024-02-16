@@ -3,7 +3,7 @@ mod boids;
 use albatross::{
     bitindex::BitIndexSet,
     bsp::{OptimizeParameter, TraceShape},
-    primitive::DirectionSegment,
+    primitive::{AabbRect, DirectionSegment},
 };
 use egui::RichText;
 use web_time::Instant;
@@ -19,6 +19,8 @@ pub struct TemplateApp {
     once: std::sync::OnceLock<()>,
     tick_time: f64,
     collision_test: CollisionTestMode,
+    collision_test_margin: f32,
+    drag_start_pos: egui::Pos2,
 }
 
 #[derive(Default)]
@@ -61,6 +63,8 @@ impl eframe::App for TemplateApp {
             // Render boids / grids
             let resp = self.model.draw(ui, &self.render_opt);
 
+            /* ------------------------------------ Spawning ------------------------------------ */
+
             if resp.dragged_by(egui::PointerButton::Secondary)
                 || resp.clicked_by(egui::PointerButton::Secondary)
             {
@@ -79,6 +83,9 @@ impl eframe::App for TemplateApp {
                     self.spawning_predator,
                 );
             }
+
+            /* --------------------------------- Screen Control --------------------------------- */
+
             if resp.dragged_by(egui::PointerButton::Primary) {
                 let delta = resp.drag_delta();
                 self.render_opt.offset[0] += delta.x;
@@ -110,6 +117,43 @@ impl eframe::App for TemplateApp {
                 self.render_opt.offset[0] -= (before_world[0] - after_world[0]) * zoom;
                 self.render_opt.offset[1] -= (before_world[1] - after_world[1]) * zoom;
                 self.render_opt.zoom = zoom;
+            }
+
+            /* ---------------------------- Collision Test Rendering ---------------------------- */
+
+            if resp.drag_started_by(egui::PointerButton::Middle) {
+                self.drag_start_pos = resp.interact_pointer_pos().unwrap();
+            }
+
+            if resp.dragged_by(egui::PointerButton::Middle) {
+                let cur_pos = resp.interact_pointer_pos().unwrap();
+                let (center, trace) = match self.collision_test {
+                    CollisionTestMode::Aabb => {
+                        // Change AABB to center + extent expression
+                        let aabb = AabbRect::new(self.drag_start_pos.into(), cur_pos.into());
+                        (aabb.center(), TraceShape::Aabb(aabb.extent()))
+                    }
+                    CollisionTestMode::Sphere => {
+                        let delta = cur_pos - self.drag_start_pos;
+                        (
+                            self.drag_start_pos.into(),
+                            TraceShape::Sphere(delta.length()),
+                        )
+                    }
+                    CollisionTestMode::Capsule(radius) => {
+                        let dir = DirectionSegment::new((cur_pos - self.drag_start_pos).into());
+
+                        (
+                            self.drag_start_pos.into(),
+                            TraceShape::Capsule { dir, radius },
+                        )
+                    }
+                };
+
+                self.model
+                    .set_hit_test(center, trace, self.collision_test_margin);
+            } else {
+                self.model.clear_hit_test();
             }
         });
 
@@ -146,6 +190,54 @@ impl eframe::App for TemplateApp {
                             cols[1].monospace(RichText::new(value).color(egui::Color32::WHITE));
                         });
                     }
+                });
+
+            egui::CollapsingHeader::new("Test")
+                .default_open(true)
+                .show(ui, |ui| {
+                    ui.columns(3, |c| {
+                        if c[0]
+                            .radio(
+                                matches!(self.collision_test, CollisionTestMode::Aabb),
+                                "AABB",
+                            )
+                            .clicked()
+                        {
+                            self.collision_test = CollisionTestMode::Aabb;
+                        } else if c[1]
+                            .radio(
+                                matches!(self.collision_test, CollisionTestMode::Sphere),
+                                "Sphere",
+                            )
+                            .clicked()
+                        {
+                            self.collision_test = CollisionTestMode::Sphere;
+                        } else if c[2]
+                            .radio(
+                                matches!(self.collision_test, CollisionTestMode::Capsule(_)),
+                                "Capsule",
+                            )
+                            .clicked()
+                        {
+                            self.collision_test = CollisionTestMode::Capsule(0.0);
+                        }
+                    });
+
+                    if let CollisionTestMode::Capsule(ref mut rad) = self.collision_test {
+                        ui.columns(2, |c| {
+                            c[0].label("Capsule Radius");
+                            c[1].add(egui::DragValue::new(rad).speed(0.01).clamp_range(0.0..=1e3));
+                        })
+                    }
+
+                    ui.columns(2, |c| {
+                        c[0].label("Collision Query Margin");
+                        c[1].add(
+                            egui::DragValue::new(&mut self.collision_test_margin)
+                                .speed(0.05)
+                                .clamp_range(0.0..=1e3),
+                        );
+                    })
                 });
 
             egui::CollapsingHeader::new("Boids")
