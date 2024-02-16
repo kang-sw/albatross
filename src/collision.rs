@@ -32,6 +32,8 @@ pub mod check {
         center: &V,
         extent: &V,
     ) -> bool {
+        // FIXME: Broken logic
+
         //
         // Tries to avoid calculating `norm` of the extent as much as
         // possible ... What we want here is filtering out following

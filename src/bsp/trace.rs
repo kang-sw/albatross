@@ -74,15 +74,25 @@ impl<T: Element> Tree<T> {
         let visitor = move |node: T::NodeKey| {
             for (elem_id, elem) in self.leaf_iter(node) {
                 let matches = match elem.data.extent() {
-                    TraceShape::Sphere(radius) => {
-                        collision::check::capsule_sphere(&line, radius, &elem.pos, radius)
+                    TraceShape::Sphere(rad) => {
+                        collision::check::capsule_sphere(&line, radius, &elem.pos, rad)
                     }
                     TraceShape::Aabb(ext) => {
                         collision::check::capsule_center_extent(&line, radius, &elem.pos, &ext)
                     }
-                    TraceShape::Capsule { dir, radius } => {
-                        let elem_line = LineSegment::from_capsule(*p_start, dir);
-                        collision::check::capsule_capsule(&line, radius, &elem_line, radius)
+                    TraceShape::Capsule {
+                        dir,
+                        radius: elem_rad,
+                    } => {
+                        let elem_line = LineSegment::from_capsule(
+                            elem.pos.sub(
+                                // Make the capsule located at the origin
+                                &dir.calc_v_dir()
+                                    .amp(<T::Vector as Vector>::Num::from_int(2).inv()),
+                            ),
+                            dir,
+                        );
+                        collision::check::capsule_capsule(&line, radius, &elem_line, elem_rad)
                     }
                 };
 
@@ -113,9 +123,12 @@ impl<T: Element> Tree<T> {
                         let aabb = AabbRect::new_extent(elem.pos, ext);
                         collision::check::aabb_sphere(&aabb, center, radius)
                     }
-                    TraceShape::Capsule { dir: line, radius } => {
+                    TraceShape::Capsule {
+                        dir: line,
+                        radius: elem_rad,
+                    } => {
                         let elem_line = LineSegment::from_capsule(elem.pos, line);
-                        collision::check::capsule_sphere(&elem_line, radius, center, radius)
+                        collision::check::capsule_sphere(&elem_line, elem_rad, center, radius)
                     }
                 };
 
@@ -132,6 +145,8 @@ impl<T: Element> Tree<T> {
         query_margin: <T::Vector as Vector>::Num,
         mut visit: impl FnMut(T::NodeKey, T::ElemKey, &TreeElement<T>),
     ) {
+        let q_center = region.center();
+        let q_extent = region.extent();
         self.query_region(&region.extended_by_all(query_margin), move |node| {
             for (elem_id, elem) in self.leaf_iter(node) {
                 let matches = match elem.data.extent() {
@@ -145,10 +160,7 @@ impl<T: Element> Tree<T> {
                     TraceShape::Capsule { dir: line, radius } => {
                         let elem_line = LineSegment::from_capsule(elem.pos, line);
                         collision::check::capsule_center_extent(
-                            &elem_line,
-                            radius,
-                            &region.center(),
-                            &region.extent(),
+                            &elem_line, radius, &q_center, &q_extent,
                         )
                     }
                 };
@@ -166,10 +178,12 @@ pub fn create_line_region_cutter<V: Vector>(
     end: V,
     query_margin: <V as Vector>::Num,
 ) -> impl Fn(&AabbRect<V>, AxisIndex, V::Num) -> [AabbRect<V>; 2] {
+    // FIXME: Broken logic
+
     let dir = end.sub(&start);
 
-    move |rect, axis, value| {
-        // TODO: Cut single axis of plane affects the rest when the shape is linear.
+    move |_, axis, value| {
+        // Cut single axis of plane affects the rest when the shape is linear.
         let v_start = start[axis];
         let v_end = end[axis];
 
@@ -188,10 +202,7 @@ pub fn create_line_region_cutter<V: Vector>(
             [end, start]
         };
 
-        [
-            AabbRect::new(p_minus, p_t),
-            AabbRect::new(p_t, p_plus).extended_by_all(query_margin),
-        ]
-        .map(|x| x.extended_by_all(query_margin).intersection(rect))
+        [AabbRect::new(p_minus, p_t), AabbRect::new(p_t, p_plus)]
+            .map(|x| x.extended_by_all(query_margin * Number::from_int(3) / Number::from_int(2)))
     }
 }
