@@ -116,20 +116,24 @@ pub mod check {
                 let u_plane_n = V::unit(i);
 
                 let dot_n_d = u_plane_n.dot(line.u_d());
-                let mut v_c = if dot_n_d.is_zero() {
+                let mut v_c = {
                     let mut t = u_plane_n.dot(&v_plane_p.sub(&line.p_start));
-                    t = t / dot_n_d;
+
+                    t = if dot_n_d.is_zero() {
+                        t / dot_n_d
+                    } else {
+                        V::Num::MAXVALUE
+                    };
 
                     // Here we don't clamp `t` in line segment range; as we're
                     // calculating the point laid on plane.
                     line.p_start.add(&line.u_d().amp(t))
-                } else {
-                    // Any point is allowed.
-                    v_plane_p
                 };
 
-                // The collision point MUST be on the plane.
-                debug_assert!((v_c[i] - v_plane_p[i]).to_f64().abs() < 1e-6);
+                // Force the collision point to be on the plane. Usually it's satisfied
+                // without any additional operation, however, the above `dot_n_d` can be
+                // zero which makes the `t` to be NaN.
+                v_c[i] = v_plane_p[i];
 
                 // Clamp collision point in range
                 for k in 0..V::D {

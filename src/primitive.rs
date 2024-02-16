@@ -263,7 +263,7 @@ mod _impl_fixed {
         };
 
         (f, $($ty:ty), *) => {
-            $(define_minmax!(base, $ty, def_math, def_rsqrt);)*
+            $(define_minmax!(base, $ty, def_float, def_rsqrt);)*
         };
 
         /* -------------------------------------- Utilities ------------------------------------- */
@@ -315,7 +315,7 @@ mod _impl_fixed {
             }
         };
 
-        (def_math) => {
+        (def_float) => {
             fn sqrt(self) -> Self {
                 self.sqrt()
             }

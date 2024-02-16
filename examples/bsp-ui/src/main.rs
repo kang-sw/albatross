@@ -12,8 +12,9 @@ fn main() -> eframe::Result<()> {
             .with_min_inner_size([300.0, 220.0]),
         ..Default::default()
     };
+
     eframe::run_native(
-        "eframe template",
+        "BSP Boids Example",
         native_options,
         Box::new(|cc| {
             cc.egui_ctx.style_mut(|style| {
