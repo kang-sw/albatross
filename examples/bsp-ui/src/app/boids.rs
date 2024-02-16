@@ -699,6 +699,26 @@ impl Model {
                     // 2. Draw a line between two circles
                     //    - This is a line connects two circles' center, and offset by
                     //      radius to its orthogonal direction respectively.
+
+                    let start = to_screen(origin.into(), offset, zoom);
+                    let end = to_screen(origin.add(&dir.calc_v_dir()).into(), offset, zoom);
+
+                    let radius = radius * zoom;
+
+                    p.circle(start.into(), radius, color_bg, stroke);
+                    p.circle(end.into(), radius, color_bg, stroke);
+
+                    let mut v_offset = dir.u_dir().amp(radius);
+
+                    let v_offset_1 = [v_offset[1], -v_offset[0]];
+                    let v_offset_2 = [-v_offset[1], v_offset[0]];
+
+                    for offset in [v_offset_1, v_offset_2] {
+                        let start = start.add(&offset);
+                        let end = end.add(&offset);
+
+                        p.line_segment([start, end].map(Into::into), stroke);
+                    }
                 }
             }
 
