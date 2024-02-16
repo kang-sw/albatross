@@ -5,7 +5,7 @@ use std::{
 
 use albatross::{
     bitindex::BitIndexSet,
-    bsp::{self, OptimizeParameter, TraceShape},
+    bsp::{self, Element, OptimizeParameter, TraceShape},
     primitive::{AabbRect, VectorExt},
 };
 use egui::{Color32, Stroke};
@@ -435,6 +435,7 @@ impl Model {
 
         let mut hit_test_grids = HashSet::new();
         let mut hit_test_elems = Vec::new();
+        let mut hit_test_elapsed = 0.;
 
         let hit_test = self.hit_test.map(|(center, mut shape, margin)| {
             // Coordinates should be converted to world space
@@ -454,10 +455,12 @@ impl Model {
             hit_test_grids.reserve(10);
             hit_test_elems.reserve(128);
 
+            let start = Instant::now();
             self.bsp.trace(&center, &shape, margin, |node, elem, _| {
                 hit_test_grids.insert(node);
                 hit_test_elems.push(elem);
             });
+            hit_test_elapsed = start.elapsed().as_secs_f64();
         }
 
         if *draw_grid {
@@ -668,64 +671,106 @@ impl Model {
         }
 
         if let Some((origin, shape, ..)) = hit_test {
-            // TODO: Render hit test region
-            let color_bg = egui::Color32::from_rgba_unmultiplied(255, 0, 255, 17);
-            let stroke = egui::Stroke {
-                width: 1.,
-                color: Color32::from_rgb(255, 0, 255),
-            };
+            // Render hit test region
+            {
+                let color_bg = egui::Color32::from_rgba_unmultiplied(255, 0, 255, 17);
+                let stroke = egui::Stroke {
+                    width: 1.,
+                    color: Color32::from_rgb(255, 0, 255),
+                };
 
-            match shape {
-                TraceShape::Aabb(ext) => {
-                    let aabb = AabbRect::new_extent(origin, ext);
-                    let min = to_screen((*aabb.min()).into(), offset, zoom);
-                    let max = to_screen((*aabb.max()).into(), offset, zoom);
-
-                    p.rect(
-                        egui::Rect::from_min_max(min.into(), max.into()),
-                        0.,
-                        color_bg,
-                        stroke,
-                    );
-                }
-                TraceShape::Sphere(rad) => {
-                    let center = to_screen(origin.into(), offset, zoom);
-                    let rad = rad * zoom;
-
-                    p.circle(center.into(), rad, color_bg, stroke);
-                }
-                TraceShape::Capsule { dir, radius } => {
-                    // 1. Draw two circles connects start-end point
-                    // 2. Draw a line between two circles
-                    //    - This is a line connects two circles' center, and offset by
-                    //      radius to its orthogonal direction respectively.
-
-                    let start = to_screen(origin.into(), offset, zoom);
-                    let end = to_screen(origin.add(&dir.calc_v_dir()).into(), offset, zoom);
-
-                    let radius = radius * zoom;
-
-                    p.circle(start.into(), radius, color_bg, stroke);
-                    p.circle(end.into(), radius, color_bg, stroke);
-
-                    let mut v_offset = dir.u_dir().amp(radius);
-
-                    let v_offset_1 = [v_offset[1], -v_offset[0]];
-                    let v_offset_2 = [-v_offset[1], v_offset[0]];
-
-                    for offset in [v_offset_1, v_offset_2] {
-                        let start = start.add(&offset);
-                        let end = end.add(&offset);
-
-                        p.line_segment([start, end].map(Into::into), stroke);
-                    }
-                }
+                draw_trace_shape(&p, origin, shape, color_bg, stroke, offset, zoom);
             }
 
-            // TODO: Visualize query hit elements
+            // Visualize query hit elements
+
+            for elem_id in hit_test_elems.iter().cloned() {
+                let elem = &self.bsp[elem_id];
+                let shape = elem.extent();
+
+                draw_trace_shape(
+                    &p,
+                    *elem.pos(),
+                    shape,
+                    Color32::from_rgba_unmultiplied(255, 255, 0, 13),
+                    egui::Stroke {
+                        width: 1.,
+                        color: Color32::YELLOW,
+                    },
+                    offset,
+                    zoom,
+                );
+            }
+
+            // Hit test result text
+
+            let cursor_pos = ui.input(|i| i.pointer.interact_pos()).unwrap_or_default();
+            p.debug_text(
+                cursor_pos,
+                egui::Align2::LEFT_TOP,
+                egui::Color32::WHITE,
+                format!("Hit test: {:.2}us", hit_test_elapsed * 1e6),
+            );
         }
 
         resp
+    }
+}
+
+fn draw_trace_shape(
+    p: &egui::Painter,
+    origin: [f32; 2],
+    shape: TraceShape<[f32; 2]>,
+    color_bg: egui::Color32,
+    stroke: egui::Stroke,
+    offset: [f32; 2],
+    zoom: f32,
+) {
+    match shape {
+        TraceShape::Aabb(ext) => {
+            let aabb = AabbRect::new_extent(origin, ext);
+            let min = to_screen((*aabb.min()).into(), offset, zoom);
+            let max = to_screen((*aabb.max()).into(), offset, zoom);
+
+            p.rect(
+                egui::Rect::from_min_max(min.into(), max.into()),
+                0.,
+                color_bg,
+                stroke,
+            );
+        }
+        TraceShape::Sphere(rad) => {
+            let center = to_screen(origin.into(), offset, zoom);
+            let rad = rad * zoom;
+
+            p.circle(center.into(), rad, color_bg, stroke);
+        }
+        TraceShape::Capsule { dir, radius } => {
+            // 1. Draw two circles connects start-end point
+            // 2. Draw a line between two circles
+            //    - This is a line connects two circles' center, and offset by
+            //      radius to its orthogonal direction respectively.
+
+            let start = to_screen(origin.into(), offset, zoom);
+            let end = to_screen(origin.add(&dir.calc_v_dir()).into(), offset, zoom);
+
+            let radius = radius * zoom;
+
+            p.circle(start.into(), radius, color_bg, stroke);
+            p.circle(end.into(), radius, color_bg, stroke);
+
+            let v_offset = dir.u_dir().amp(radius);
+
+            let v_offset_1 = [v_offset[1], -v_offset[0]];
+            let v_offset_2 = [-v_offset[1], v_offset[0]];
+
+            for offset in [v_offset_1, v_offset_2] {
+                let start = start.add(&offset);
+                let end = end.add(&offset);
+
+                p.line_segment([start, end].map(Into::into), stroke);
+            }
+        }
     }
 }
 
