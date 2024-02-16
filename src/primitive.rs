@@ -63,8 +63,13 @@ pub trait NumExt: Number {
         }
     }
 
-    fn clamp_value(self, min: Self, max: Self) -> Self {
+    fn clamp(self, min: Self, max: Self) -> Self {
         self.min_value(max).max_value(min)
+    }
+
+    fn clamp_unordered(self, a: Self, b: Self) -> Self {
+        let [min, max] = if a < b { [a, b] } else { [b, a] };
+        self.min_value(min).max_value(max)
     }
 
     fn sqr(self) -> Self {
@@ -399,7 +404,7 @@ impl<V: Vector> AabbRect<V> {
         let mut nearest = *center;
 
         for i in 0..V::D {
-            nearest[i] = nearest[i].clamp_value(self.min[i], self.max[i]);
+            nearest[i] = nearest[i].clamp(self.min[i], self.max[i]);
         }
 
         center.dist_sqr(&nearest) <= radius.sqr()
@@ -586,5 +591,53 @@ impl<V: Vector> AabbRect<V> {
 
     pub fn split_plus(&self, axis: AxisIndex, value: V::Num) -> Self {
         { *self }.tap_mut(|x| x.apply_split_plus(axis, value))
+    }
+}
+
+/* ---------------------------------------------------------------------------------------------- */
+/*                                           GEOMETRIES                                           */
+/* ---------------------------------------------------------------------------------------------- */
+
+pub struct ZeroNorm;
+
+/* ---------------------------------------- Line Segment ---------------------------------------- */
+
+pub struct LineSegment<V: Vector> {
+    pub p_offset: V,
+    pub s_norm: V::Num,
+    u_d: V,
+}
+
+impl<V: Vector> LineSegment<V> {
+    pub fn new(p_start: V, p_end: V) -> Self {
+        let u_d = p_end.sub(&p_start);
+        let s_norm = u_d.norm();
+        let u_d = u_d.amp(s_norm.inv());
+
+        Self {
+            p_offset: p_start,
+            s_norm,
+            u_d,
+        }
+    }
+
+    pub fn distance_from_sqr(&self, p_dst: V) -> V::Num {
+        let l = self;
+
+        let v_to_dst = p_dst.sub(&l.p_offset);
+        let s_perpend_len = l.u_d.dot(&v_to_dst).clamp(V::Num::ZERO, l.s_norm);
+        let p_perpend = l.p_offset.add(&l.u_d.amp(s_perpend_len));
+
+        p_perpend.dist_sqr(&p_dst)
+    }
+
+    pub fn u_d(&self) -> &V {
+        &self.u_d
+    }
+
+    pub fn set_end(&mut self, p_end: V) {
+        self.u_d = p_end.sub(&self.p_offset);
+        self.s_norm = self.u_d.norm();
+        self.u_d = self.u_d.amp(self.s_norm.inv());
     }
 }

@@ -1,29 +1,29 @@
-use crate::primitive::{AabbRect, AxisIndex, NumExt, Number, Vector, VectorExt as _};
+use crate::primitive::{AabbRect, AxisIndex, LineSegment, NumExt, Number, Vector, VectorExt as _};
 
 use super::{Element, TraceShape, Tree};
 
 impl<T: Element> Tree<T> {
     pub fn trace_capsule(
         &self,
-        start: &T::Vector,
-        end: &T::Vector,
+        p_start: &T::Vector,
+        p_end: &T::Vector,
         radius: <T::Vector as Vector>::Num,
         query_margin: <T::Vector as Vector>::Num,
         mut visit: impl FnMut(T::NodeKey, T::ElemKey),
     ) {
-        let v_d = end.sub(start);
-        let s_norm = v_d.norm();
+        let line = LineSegment::new(*p_start, *p_end);
 
-        if s_norm.is_zero() {
+        let p_line_min = p_start.min_values(p_end);
+        let p_line_max = p_start.max_values(p_end);
+
+        if line.s_norm.is_zero() {
             // treat it as a sphere
-            self.trace_sphere(start, radius, query_margin, visit);
+            self.trace_sphere(p_start, radius, query_margin, visit);
             return;
         }
 
-        let u_d = v_d.amp(s_norm.inv());
-
-        let region = AabbRect::new(*start, *end).extended_by_all(radius + query_margin);
-        let cutter = create_line_region_cutter(*start, *end, radius + query_margin);
+        let region = AabbRect::new(*p_start, *p_end).extended_by_all(radius + query_margin);
+        let cutter = create_line_region_cutter(*p_start, *p_end, radius + query_margin);
 
         let visitor = move |node: T::NodeKey| {
             for (elem_id, elem) in self.leaf_iter(node) {
@@ -50,15 +50,15 @@ impl<T: Element> Tree<T> {
                         // However, here, we want to avoid calculating norm of the AABB
                         // extent using sqrt, therefore we what we need here is
                         //
-                        //      D^2 > R_aabb^2 + R_capsule^2 + Expr(R_aabb^2, R_capsule)
-                        //        where Expr(R_aabb^2, R_capsule) <= 2*R_aabb*R_capsule
+                        //      D^2 > R_aabb^2 + R_capsule^2 + Expr
+                        //        where Expr <= 2*R_aabb*R_capsule
                         //
                         // Here we simply replace R_aabb as the longest extent of the of
                         // AABB(l), which is guaranteed to be shorter than the actual
                         // radius, but still gives reasonable approximation and satisfies
                         // the above condition:
                         //
-                        //      2*l*R_capsule <= 2*R_aabb*R_capsule
+                        //      Expr = 2*l*R_capsule <= 2*R_aabb*R_capsule
                         //
                         let two = <T::Vector as Vector>::Num::from_int(2);
                         let half_ext = ext.amp(two.inv());
@@ -72,14 +72,7 @@ impl<T: Element> Tree<T> {
                     }
                 };
 
-                let s_h = (elem.pos.sub(start))
-                    .dot(&u_d)
-                    .clamp_value(Number::ZERO, s_norm);
-
-                let v_perpend = start.add(&u_d.amp(s_h));
-                let s_dist_sqr = elem.pos.dist_sqr(&v_perpend);
-
-                if s_dist_sqr > s_rad_sum_sqr {
+                if line.distance_from_sqr(elem.pos) > s_rad_sum_sqr {
                     // Bounding sphere disjoints; early return
                     continue;
                 }
@@ -87,7 +80,7 @@ impl<T: Element> Tree<T> {
                 if let TraceShape::Aabb(ext) = ext {
                     // In case of AABB; apply more precise checks.
 
-                    // 0. Since this operation is very heavy, it first performs
+                    // 0. Since this operation is relatively heavy, it first performs
                     //    preliminary filtering through a radius check. (line-bounding
                     //    sphere distance)
                     // 1. Each hyperplane is defined by a minimum point and a maximum
@@ -106,8 +99,8 @@ impl<T: Element> Tree<T> {
                     //    clamped point to the line segment again. Repeat for all
                     //    hyperplanes, and the smallest value becomes the distance.
 
-                    // 0. 이 연산은 매우 무겁기 때문에, 우선 앞의 radius check를 통해
-                    //    1차적으로 필터링 수행.
+                    // 0. 이 연산은 상대적으로 무겁기 때문에, 우선 앞의 radius check를 통해
+                    //    1차적으로 필터링 수행. (위의 line-distance 체크)
                     // 1. 각 초평면은 최소점, 최대점을 P로 두고, 축 방향을 n으로 한다.
                     //    따라서, 2D에서는 4개, 3D에서는 6개, N에서는 N*2개의 초평면이
                     //    발생.
@@ -119,10 +112,55 @@ impl<T: Element> Tree<T> {
                     // 4. 내접하지 않는다면, clamp 완료된 점에서 다시 선분과의 거리를
                     //    계산한다. 전체 초평면에 대해 반복하고, 최소값이 거리가 된다.
 
-                    todo!()
-                }
+                    let half_ext = ext.amp(<T::Vector as Vector>::Num::from_int(2).inv());
+                    let v_min = elem.pos.sub(&half_ext);
+                    let v_max = elem.pos.add(&half_ext);
 
-                visit(node, elem_id);
+                    for v_plane_p in [v_min, v_max] {
+                        for i in 0..T::Vector::D {
+                            let u_plane_n = T::Vector::unit(i);
+
+                            let dot_n_d = u_plane_n.dot(line.u_d());
+                            let mut v_c = if dot_n_d.is_zero() {
+                                let mut t = u_plane_n.dot(&v_plane_p.sub(p_start));
+                                t = t / dot_n_d;
+
+                                // Here we don't clamp `t` in line segment range; as we're
+                                // calculating the point laid on plane.
+                                p_start.add(&line.u_d().amp(t))
+                            } else {
+                                // Any point is allowed.
+                                v_plane_p
+                            };
+
+                            // The collision point MUST be on the plane.
+                            debug_assert!((v_c[i] - v_plane_p[i]).to_f64().abs() < 1e-6);
+
+                            // Clamp collision point in range
+                            for k in 0..T::Vector::D {
+                                if k != i {
+                                    // 1. Clamp to the line segment range first
+                                    v_c[k] = v_c[k].clamp(p_line_min[k], p_line_max[k]);
+
+                                    // 2. Then clamp to the plane range
+                                    v_c[k] = v_c[k].clamp(v_min[k], v_max[k]);
+                                }
+                            }
+
+                            // Calculate distance between the line and the collision
+                            let dist_sqr = line.distance_from_sqr(v_c);
+
+                            if dist_sqr <= radius.sqr() {
+                                // Any of the hyperplane intersects with the capsule
+                                visit(node, elem_id);
+                                return;
+                            }
+                        }
+                    }
+                } else {
+                    // All other cases
+                    visit(node, elem_id);
+                }
             }
         };
 
