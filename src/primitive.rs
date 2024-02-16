@@ -651,6 +651,14 @@ impl<V: Vector> LineSegment<V> {
         }
     }
 
+    pub fn from_capsule_centered(p_start: V, capsule: DirectionSegment<V>) -> Self {
+        Self {
+            p_start: p_start.sub(&capsule.u_dir.amp(capsule.s_len / V::Num::from_int(2))),
+            s_norm: capsule.s_len,
+            u_d: capsule.u_dir,
+        }
+    }
+
     /// # Safety
     ///
     /// This function is marked as unsafe because it does not perform any checks

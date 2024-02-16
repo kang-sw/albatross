@@ -84,14 +84,7 @@ impl<T: Element> Tree<T> {
                         dir,
                         radius: elem_rad,
                     } => {
-                        let elem_line = LineSegment::from_capsule(
-                            elem.pos.sub(
-                                // Make the capsule located at the origin
-                                &dir.calc_v_dir()
-                                    .amp(<T::Vector as Vector>::Num::from_int(2).inv()),
-                            ),
-                            dir,
-                        );
+                        let elem_line = LineSegment::from_capsule_centered(elem.pos, dir);
                         collision::check::capsule_capsule(&line, radius, &elem_line, elem_rad)
                     }
                 };
@@ -124,10 +117,10 @@ impl<T: Element> Tree<T> {
                         collision::check::aabb_sphere(&aabb, center, radius)
                     }
                     TraceShape::Capsule {
-                        dir: line,
+                        dir,
                         radius: elem_rad,
                     } => {
-                        let elem_line = LineSegment::from_capsule(elem.pos, line);
+                        let elem_line = LineSegment::from_capsule_centered(elem.pos, dir);
                         collision::check::capsule_sphere(&elem_line, elem_rad, center, radius)
                     }
                 };
@@ -157,8 +150,8 @@ impl<T: Element> Tree<T> {
                         let aabb = AabbRect::new_extent(elem.pos, ext);
                         collision::check::aabb_aabb(region, &aabb)
                     }
-                    TraceShape::Capsule { dir: line, radius } => {
-                        let elem_line = LineSegment::from_capsule(elem.pos, line);
+                    TraceShape::Capsule { dir, radius } => {
+                        let elem_line = LineSegment::from_capsule_centered(elem.pos, dir);
                         collision::check::capsule_center_extent(
                             &elem_line, radius, &q_center, &q_extent,
                         )
