@@ -137,7 +137,7 @@ impl OptimizeParameter {
             collapse_threshold: split_count / 2,
             max_collapse_height: 8,
             balancing: 0.3,
-            split_strategy: SplitStrategy::ClusterMedian,
+            split_strategy: SplitStrategy::SpatialMedian,
             minimum_length: 0.,
             suboptimal_split_count: 1,
             square_split_axes: BitIndexSet::empty(),
