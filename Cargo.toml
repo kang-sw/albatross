@@ -17,3 +17,8 @@ derive_more = "0.99"
 enum-as-inner = "0.6"
 
 typenum = "1"
+
+nalgebra = { version = "0.32", optional = true }
+
+[features]
+nalgebra = ["dep:nalgebra"]

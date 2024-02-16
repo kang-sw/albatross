@@ -7,7 +7,8 @@ use std::ops::{Add, Div, Index, IndexMut, Mul, Sub};
 use tap::Tap;
 
 pub trait Number:
-    Sized
+    'static
+    + Sized
     + Copy
     + PartialOrd
     + Add<Output = Self>
@@ -234,6 +235,20 @@ impl<T: Number, const D: usize> Vector for [T; D] {
 
     fn zero() -> Self {
         [T::ZERO; D]
+    }
+
+    fn zero_f64() -> impl Vector<Num = f64> {
+        [0.0; D]
+    }
+}
+
+#[cfg(feature = "nalgebra")]
+impl<T: Number, const D: usize> Vector for nalgebra::SVector<T, D> {
+    type Num = T;
+    const D: AxisIndex = D;
+
+    fn zero() -> Self {
+        [T::ZERO; D].into()
     }
 
     fn zero_f64() -> impl Vector<Num = f64> {
