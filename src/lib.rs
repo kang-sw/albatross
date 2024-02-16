@@ -2,6 +2,7 @@
 
 pub mod bitindex;
 pub mod bsp;
+pub mod collision;
 pub mod primitive;
 
 // Reexport necessary items.

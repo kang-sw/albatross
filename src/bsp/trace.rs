@@ -72,7 +72,7 @@ impl<T: Element> Tree<T> {
                     }
                 };
 
-                if line.distance_from_sqr(elem.pos) > s_rad_sum_sqr {
+                if line.distance_from_sqr(&elem.pos) > s_rad_sum_sqr {
                     // Bounding sphere disjoints; early return
                     continue;
                 }
@@ -148,7 +148,7 @@ impl<T: Element> Tree<T> {
                             }
 
                             // Calculate distance between the line and the collision
-                            let dist_sqr = line.distance_from_sqr(v_c);
+                            let dist_sqr = line.distance_from_sqr(&v_c);
 
                             if dist_sqr <= radius.sqr() {
                                 // Any of the hyperplane intersects with the capsule
@@ -181,7 +181,7 @@ impl<T: Element> Tree<T> {
                     TraceShape::Dot => center.dist_sqr(&elem.pos) <= radius * radius,
                     TraceShape::Sphere(rad) => center.dist_sqr(&elem.pos) <= (rad + radius).sqr(),
                     TraceShape::Aabb(ext) => {
-                        let aabb = AabbRect::new_rectangular(elem.pos, ext);
+                        let aabb = AabbRect::new_extent(elem.pos, ext);
                         aabb.intersects_sphere(center, radius)
                     }
                 };
@@ -205,7 +205,7 @@ impl<T: Element> Tree<T> {
                     TraceShape::Dot => region.contains(&elem.pos),
                     TraceShape::Sphere(rad) => region.intersects_sphere(&elem.pos, rad),
                     TraceShape::Aabb(ext) => {
-                        let aabb = AabbRect::new_rectangular(elem.pos, ext);
+                        let aabb = AabbRect::new_extent(elem.pos, ext);
                         region.intersects(&aabb)
                     }
                 };

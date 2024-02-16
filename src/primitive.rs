@@ -194,6 +194,11 @@ pub trait VectorExt: Vector {
         self.norm_sqr().try_sqrt().unwrap()
     }
 
+    fn inv_norm(&self) -> Self::Num {
+        // TODO: Apply fast inverse square root
+        self.norm().inv()
+    }
+
     fn dot(&self, other: &Self) -> Self::Num {
         let mut sum = Self::Num::ZERO;
         for i in 0..Self::D {
@@ -385,12 +390,12 @@ impl<V: Vector> AabbRect<V> {
         Self { min, max }
     }
 
-    pub fn new_rectangular(center: V, extent: V) -> Self {
+    pub fn new_extent(center: V, extent: V) -> Self {
         let mut min = center;
         let mut max = center;
 
         for i in 0..V::D {
-            let half = extent[i] / (V::Num::ONE + V::Num::ONE);
+            let half = extent[i] / V::Num::from_int(2);
             assert!(half >= V::Num::ZERO);
 
             min[i] = min[i] - half;
@@ -603,7 +608,7 @@ pub struct ZeroNorm;
 /* ---------------------------------------- Line Segment ---------------------------------------- */
 
 pub struct LineSegment<V: Vector> {
-    pub p_offset: V,
+    pub p_start: V,
     pub s_norm: V::Num,
     u_d: V,
 }
@@ -615,20 +620,35 @@ impl<V: Vector> LineSegment<V> {
         let u_d = u_d.amp(s_norm.inv());
 
         Self {
-            p_offset: p_start,
+            p_start,
             s_norm,
             u_d,
         }
     }
 
-    pub fn distance_from_sqr(&self, p_dst: V) -> V::Num {
+    /// # Safety
+    ///
+    /// This function is marked as unsafe because it does not perform any checks
+    /// that given normal is valid normal
+    pub unsafe fn new_unchecked(p_offset: V, s_norm: V::Num, u_d: V) -> Self {
+        // It MUST be a valid normal with length 1
+        debug_assert!((u_d.norm_sqr() - V::Num::ONE).to_f64().abs() < 1e-3);
+
+        Self {
+            p_start: p_offset,
+            s_norm,
+            u_d,
+        }
+    }
+
+    pub fn distance_from_sqr(&self, p_dst: &V) -> V::Num {
         let l = self;
 
-        let v_to_dst = p_dst.sub(&l.p_offset);
+        let v_to_dst = p_dst.sub(&l.p_start);
         let s_perpend_len = l.u_d.dot(&v_to_dst).clamp(V::Num::ZERO, l.s_norm);
-        let p_perpend = l.p_offset.add(&l.u_d.amp(s_perpend_len));
+        let p_perpend = l.p_start.add(&l.u_d.amp(s_perpend_len));
 
-        p_perpend.dist_sqr(&p_dst)
+        p_perpend.dist_sqr(p_dst)
     }
 
     pub fn u_d(&self) -> &V {
@@ -636,8 +656,12 @@ impl<V: Vector> LineSegment<V> {
     }
 
     pub fn set_end(&mut self, p_end: V) {
-        self.u_d = p_end.sub(&self.p_offset);
+        self.u_d = p_end.sub(&self.p_start);
         self.s_norm = self.u_d.norm();
         self.u_d = self.u_d.amp(self.s_norm.inv());
+    }
+
+    pub fn calc_p_end(&self) -> V {
+        self.p_start.add(&self.u_d.amp(self.s_norm))
     }
 }
