@@ -2,7 +2,7 @@ use std::collections::{BTreeSet, VecDeque};
 
 use albatross::{
     bitindex::BitIndexSet,
-    bsp::{self, OptimizeParameter},
+    bsp::{self, OptimizeParameter, TraceShape},
     primitive::AabbRect,
 };
 use egui::Stroke;
@@ -30,6 +30,10 @@ impl bsp::Element for BspData {
     type ElemKey = ElementIndex;
     type NodeKey = TreeNodeIndex;
     type LeafData = ();
+
+    fn extent(&self) -> TraceShape<Self::Vector> {
+        TraceShape::Sphere(BOID_SIZE)
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -89,15 +93,15 @@ impl Default for Model {
             bsp: Default::default(),
             rand: fastrand::Rng::with_seed(0),
 
-            tick_delta: 1. / 30.,
+            tick_delta: 1. / 60.,
             enable_tick: true,
 
-            area_radius: 160.,
+            area_radius: 100.,
             view_radius: 3.,
-            near_radius: 0.5,
-            cohesion_force: 24.,
-            align_force: 11.,
-            separation_force: 344.,
+            near_radius: 1.,
+            cohesion_force: 2.,
+            align_force: 1.,
+            separation_force: 3.,
             max_speed: 10.,
             predator_avoidance: 150.,
 
@@ -166,26 +170,21 @@ impl Model {
                 query_count += 1;
 
                 let (boid, tree_key, IsPredator(is_predator)) = q_elems.get(entity).unwrap();
-                let region = AabbRect::new_circular(boid.pos.into(), self.view_radius);
 
                 adjacent_kinetics.clear();
                 predator_kinetics.clear();
 
-                self.bsp.query_region(&region, |tree| {
-                    for (elem_id, elem) in self.bsp.leaf_iter(tree) {
+                let view_radius = if *is_predator { 2. } else { 1. } * self.view_radius;
+                self.bsp
+                    .trace_sphere(&boid.pos.into(), view_radius, 0., |_, elem_id, elem| {
                         if elem_id == *tree_key {
-                            continue;
+                            return;
                         }
 
                         let (other_boid, _, IsPredator(other_is_predator)) =
                             q_elems.get(elem.entity).unwrap();
-                        let diff = other_boid.pos - boid.pos;
-                        let distance = diff.norm();
 
-                        let view_radius = self.view_radius * if *is_predator { 2. } else { 1. };
-                        if distance > view_radius {
-                            continue;
-                        }
+                        let distance = (boid.pos - other_boid.pos).norm();
 
                         if *is_predator && !*other_is_predator && distance < PREDATOR_SIZE {
                             predator_kinetics.push((elem.entity, other_boid, distance));
@@ -196,8 +195,7 @@ impl Model {
                         } else {
                             adjacent_kinetics.push((other_boid, distance));
                         }
-                    }
-                });
+                    });
 
                 if adjacent_kinetics.is_empty() {
                     force.acc = Default::default();
