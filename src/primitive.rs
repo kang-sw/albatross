@@ -607,6 +607,7 @@ pub struct ZeroNorm;
 
 /* ---------------------------------------- Line Segment ---------------------------------------- */
 
+#[derive(Clone, Copy)]
 pub struct LineSegment<V: Vector> {
     pub p_start: V,
     pub s_norm: V::Num,
@@ -617,12 +618,25 @@ impl<V: Vector> LineSegment<V> {
     pub fn new(p_start: V, p_end: V) -> Self {
         let u_d = p_end.sub(&p_start);
         let s_norm = u_d.norm();
-        let u_d = u_d.amp(s_norm.inv());
+
+        let u_d = if s_norm.is_zero() {
+            V::unit(0) // It's just dummy normal
+        } else {
+            u_d.amp(s_norm.inv())
+        };
 
         Self {
             p_start,
             s_norm,
             u_d,
+        }
+    }
+
+    pub fn from_capsule(p_start: V, capsule: LineDirection<V>) -> Self {
+        Self {
+            p_start,
+            s_norm: capsule.s_norm,
+            u_d: capsule.u_dir,
         }
     }
 
@@ -663,5 +677,30 @@ impl<V: Vector> LineSegment<V> {
 
     pub fn calc_p_end(&self) -> V {
         self.p_start.add(&self.u_d.amp(self.s_norm))
+    }
+}
+
+/* ------------------------------------------- Capsule ------------------------------------------ */
+
+#[derive(Clone, Copy)]
+pub struct LineDirection<V: Vector> {
+    u_dir: V,
+    pub s_norm: V::Num,
+}
+
+impl<V: Vector> LineDirection<V> {
+    pub fn from(v_dir: V) -> Self {
+        let s_norm = v_dir.norm();
+        let u_dir = if s_norm.is_zero() {
+            V::unit(0)
+        } else {
+            v_dir.amp(s_norm.inv())
+        };
+
+        Self { u_dir, s_norm }
+    }
+
+    pub fn u_dir(&self) -> &V {
+        &self.u_dir
     }
 }

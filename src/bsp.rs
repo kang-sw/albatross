@@ -3,7 +3,7 @@ mod trace;
 
 use std::mem::replace;
 
-use crate::primitive::{AabbRect, AxisIndex, Vector};
+use crate::primitive::{AabbRect, AxisIndex, LineDirection, Number, Vector};
 use enum_as_inner::EnumAsInner;
 use slab::Slab;
 use slotmap::{Key, SlotMap};
@@ -17,20 +17,6 @@ pub const NUM_MAX_AXIS: usize = 64;
 /* ---------------------------------------------------------------------------------------------- */
 /*                                               BSP                                              */
 /* ---------------------------------------------------------------------------------------------- */
-
-/// A shape descriptor for an element.
-#[derive(Clone, Copy, Default)]
-pub enum TraceShape<V: Vector> {
-    /// Dot without any volume.
-    #[default]
-    Dot,
-
-    /// Value is extent of each axis for AABB.
-    Aabb(V),
-
-    /// Value is radius for sphere.
-    Sphere(V::Num),
-}
 
 /// A trait which represents actual data type of BSP.
 pub trait Element {
@@ -51,7 +37,7 @@ pub trait Element {
     /// split size or at some corner cases. Therefore it is recommended to set some margin
     /// when evaluating collision rectangle.
     fn extent(&self) -> TraceShape<Self::Vector> {
-        Default::default()
+        TraceShape::Sphere(Number::ZERO)
     }
 }
 
@@ -103,6 +89,24 @@ struct TreeNodeLeaf<T: Element> {
 pub struct LeafNodeBody<T: Element> {
     pub bound: AabbRect<T::Vector>,
     pub data: T::LeafData,
+}
+
+/* -------------------------------------- Trace Data Types -------------------------------------- */
+
+/// A shape descriptor for an element.
+#[derive(Clone, Copy)]
+pub enum TraceShape<V: Vector> {
+    /// Value is extent of each axis for AABB.
+    Aabb(V),
+
+    /// Value is radius for sphere.
+    Sphere(V::Num),
+
+    /// Capsule extent; Line and radius
+    Capsule {
+        line: LineDirection<V>,
+        radius: V::Num,
+    },
 }
 
 /* ----------------------------------------- Misc Impls ----------------------------------------- */

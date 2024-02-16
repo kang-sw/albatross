@@ -28,18 +28,13 @@ impl<T: Element> Tree<T> {
         let visitor = move |node: T::NodeKey| {
             for (elem_id, elem) in self.leaf_iter(node) {
                 let matches = match elem.data.extent() {
-                    ext @ (TraceShape::Dot | TraceShape::Sphere(_)) => {
-                        let radius = match ext {
-                            TraceShape::Dot => Number::ZERO,
-                            TraceShape::Sphere(r) => r,
-                            _ => unreachable!(),
-                        };
-
+                    ext @ TraceShape::Sphere(radius) => {
                         collision::intersects::capsule_sphere(&line, radius, &elem.pos, radius)
                     }
                     TraceShape::Aabb(ext) => {
                         collision::intersects::capsule_center_extent(&line, radius, &elem.pos, &ext)
                     }
+                    TraceShape::Capsule { line, radius } => todo!(),
                 };
 
                 if matches {
@@ -62,12 +57,12 @@ impl<T: Element> Tree<T> {
         self.query_region(&region.extended_by_all(query_margin), |node| {
             for (elem_id, elem) in self.leaf_iter(node) {
                 let matches = match elem.data.extent() {
-                    TraceShape::Dot => center.dist_sqr(&elem.pos) <= radius * radius,
                     TraceShape::Sphere(rad) => center.dist_sqr(&elem.pos) <= (rad + radius).sqr(),
                     TraceShape::Aabb(ext) => {
                         let aabb = AabbRect::new_extent(elem.pos, ext);
                         aabb.intersects_sphere(center, radius)
                     }
+                    TraceShape::Capsule { line, radius } => todo!(),
                 };
 
                 if matches {
@@ -86,12 +81,12 @@ impl<T: Element> Tree<T> {
         self.query_region(&region.extended_by_all(query_margin), move |node| {
             for (elem_id, elem) in self.leaf_iter(node) {
                 let matches = match elem.data.extent() {
-                    TraceShape::Dot => region.contains(&elem.pos),
                     TraceShape::Sphere(rad) => region.intersects_sphere(&elem.pos, rad),
                     TraceShape::Aabb(ext) => {
                         let aabb = AabbRect::new_extent(elem.pos, ext);
                         region.intersects(&aabb)
                     }
+                    TraceShape::Capsule { line, radius } => todo!(),
                 };
 
                 if matches {
