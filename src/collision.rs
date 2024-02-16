@@ -3,7 +3,7 @@ pub mod check {
 
     #[inline]
     pub fn sphere_sphere<V: Vector>(c_1: &V, r_1: V::Num, c_2: &V, r_2: V::Num) -> bool {
-        c_1.dist_sqr(c_2) <= (r_1 + r_2).sqr()
+        c_1.distance_sqr(c_2) <= (r_1 + r_2).sqr()
     }
 
     #[inline]

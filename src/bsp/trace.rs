@@ -3,7 +3,7 @@ use crate::{
     primitive::{AabbRect, AxisIndex, LineSegment, NumExt, Number, Vector, VectorExt as _},
 };
 
-use super::{Element, TraceShape, Tree};
+use super::{Element, TraceShape, Tree, TreeElement};
 
 impl<T: Element> Tree<T> {
     pub fn trace_capsule(
@@ -12,7 +12,7 @@ impl<T: Element> Tree<T> {
         p_end: &T::Vector,
         radius: <T::Vector as Vector>::Num,
         query_margin: <T::Vector as Vector>::Num,
-        mut visit: impl FnMut(T::NodeKey, T::ElemKey),
+        mut visit: impl FnMut(T::NodeKey, T::ElemKey, &TreeElement<T>),
     ) {
         let line = LineSegment::new(*p_start, *p_end);
 
@@ -41,7 +41,7 @@ impl<T: Element> Tree<T> {
                 };
 
                 if matches {
-                    visit(node, elem_id);
+                    visit(node, elem_id, elem);
                 }
             }
         };
@@ -54,7 +54,7 @@ impl<T: Element> Tree<T> {
         center: &T::Vector,
         radius: <T::Vector as Vector>::Num,
         query_margin: <T::Vector as Vector>::Num,
-        mut visit: impl FnMut(T::NodeKey, T::ElemKey),
+        mut visit: impl FnMut(T::NodeKey, T::ElemKey, &TreeElement<T>),
     ) {
         let region = AabbRect::new_circular(*center, radius + query_margin);
         self.query_region(&region.extended_by_all(query_margin), |node| {
@@ -74,7 +74,7 @@ impl<T: Element> Tree<T> {
                 };
 
                 if matches {
-                    visit(node, elem_id);
+                    visit(node, elem_id, elem);
                 }
             }
         });
@@ -84,7 +84,7 @@ impl<T: Element> Tree<T> {
         &self,
         region: &AabbRect<T::Vector>,
         query_margin: <T::Vector as Vector>::Num,
-        mut visit: impl FnMut(T::NodeKey, T::ElemKey),
+        mut visit: impl FnMut(T::NodeKey, T::ElemKey, &TreeElement<T>),
     ) {
         self.query_region(&region.extended_by_all(query_margin), move |node| {
             for (elem_id, elem) in self.leaf_iter(node) {
@@ -108,7 +108,7 @@ impl<T: Element> Tree<T> {
                 };
 
                 if matches {
-                    visit(node, elem_id);
+                    visit(node, elem_id, elem);
                 }
             }
         });

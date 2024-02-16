@@ -202,7 +202,11 @@ pub trait VectorExt: Vector {
         self.dot(self)
     }
 
-    fn dist_sqr(&self, other: &Self) -> Self::Num {
+    fn distance(&self, other: &Self) -> Self::Num {
+        self.distance_sqr(other).sqrt()
+    }
+
+    fn distance_sqr(&self, other: &Self) -> Self::Num {
         (self.sub(other)).norm_sqr()
     }
 
@@ -411,7 +415,7 @@ impl<V: Vector> AabbRect<V> {
             nearest[i] = nearest[i].clamp(self.min[i], self.max[i]);
         }
 
-        center.dist_sqr(&nearest) <= radius.sqr()
+        center.distance_sqr(&nearest) <= radius.sqr()
     }
 
     /// Creates a new `AabbRect` with the given minimum and maximum vectors
@@ -655,12 +659,12 @@ impl<V: Vector> LineSegment<V> {
     }
 
     pub fn dist_point_sqr(&self, p_dst: &V) -> V::Num {
-        self.nearest(p_dst).dist_sqr(p_dst)
+        self.nearest(p_dst).distance_sqr(p_dst)
     }
 
     pub fn dist_line_sqr(&self, other: &Self) -> V::Num {
         let [a, b] = self.nearest_pair(other);
-        a.dist_sqr(&b)
+        a.distance_sqr(&b)
     }
 
     pub fn nearest(&self, p_dst: &V) -> V {
