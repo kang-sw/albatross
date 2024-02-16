@@ -12,6 +12,11 @@ pub mod intersects {
     }
 
     #[inline]
+    pub fn aabb_aabb<V: Vector>(rect_1: &AabbRect<V>, rect_2: &AabbRect<V>) -> bool {
+        rect_1.intersects(rect_2)
+    }
+
+    #[inline]
     pub fn capsule_sphere<V: Vector>(
         capsule_line: &LineSegment<V>,
         capsule_r: V::Num,

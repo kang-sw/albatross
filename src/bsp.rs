@@ -104,7 +104,7 @@ pub enum TraceShape<V: Vector> {
 
     /// Capsule extent; Line and radius
     Capsule {
-        line: LineDirection<V>,
+        dir: LineDirection<V>,
         radius: V::Num,
     },
 }
