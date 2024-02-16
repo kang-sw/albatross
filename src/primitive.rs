@@ -46,10 +46,9 @@ pub trait Vector:
     const D: AxisIndex;
 
     fn zero() -> Self;
+
+    /// XXX:
     fn zero_f64() -> impl Vector<Num = f64>;
-    fn get(&self, i: AxisIndex) -> Self::Num;
-    fn get_mut(&mut self, i: AxisIndex) -> &mut Self::Num;
-    fn set(&mut self, i: AxisIndex, value: Self::Num);
 }
 
 pub type AxisIndex = usize;
@@ -101,7 +100,7 @@ pub trait VectorExt: Vector {
     fn minimum() -> Self {
         let mut v = Self::zero();
         for i in 0..Self::D {
-            v.set(i, Self::Num::MINVALUE);
+            v[i] = Self::Num::MINVALUE;
         }
         v
     }
@@ -109,37 +108,37 @@ pub trait VectorExt: Vector {
     fn maximum() -> Self {
         let mut v = Self::zero();
         for i in 0..Self::D {
-            v.set(i, Self::Num::MAXVALUE);
+            v[i] = Self::Num::MAXVALUE;
         }
         v
     }
 
     fn max_component(&self) -> Self::Num {
-        let mut max = self.get(0);
+        let mut max = self[0];
         for i in 1..Self::D {
-            max = max.max_value(self.get(i));
+            max = max.max_value(self[i]);
         }
         max
     }
 
     fn min_component(&self) -> Self::Num {
-        let mut min = self.get(0);
+        let mut min = self[0];
         for i in 1..Self::D {
-            min = min.min_value(self.get(i));
+            min = min.min_value(self[i]);
         }
         min
     }
 
     fn unit(axis: AxisIndex) -> Self {
         let mut v = Self::zero();
-        v.set(axis, Self::Num::ONE);
+        v[axis] = Self::Num::ONE;
         v
     }
 
     fn min_values(&self, other: &Self) -> Self {
         let mut v = Self::zero();
         for i in 0..Self::D {
-            v.set(i, self.get(i).min_value(other.get(i)));
+            v[i] = self[i].min_value(other[i]);
         }
         v
     }
@@ -147,7 +146,7 @@ pub trait VectorExt: Vector {
     fn max_values(&self, other: &Self) -> Self {
         let mut v = Self::zero();
         for i in 0..Self::D {
-            v.set(i, self.get(i).max_value(other.get(i)));
+            v[i] = self[i].max_value(other[i]);
         }
         v
     }
@@ -155,7 +154,7 @@ pub trait VectorExt: Vector {
     fn values(&self, value: Self::Num) -> Self {
         let mut v = Self::zero();
         for i in 0..Self::D {
-            v.set(i, value);
+            v[i] = value;
         }
         v
     }
@@ -163,7 +162,7 @@ pub trait VectorExt: Vector {
     fn sub(&self, other: &Self) -> Self {
         let mut v = Self::zero();
         for i in 0..Self::D {
-            v.set(i, self.get(i) - other.get(i));
+            v[i] = self[i] - other[i];
         }
         v
     }
@@ -171,7 +170,7 @@ pub trait VectorExt: Vector {
     fn add(&self, other: &Self) -> Self {
         let mut v = Self::zero();
         for i in 0..Self::D {
-            v.set(i, self.get(i) + other.get(i));
+            v[i] = self[i] + other[i];
         }
         v
     }
@@ -179,7 +178,7 @@ pub trait VectorExt: Vector {
     fn mul(&self, other: &Self) -> Self {
         let mut v = Self::zero();
         for i in 0..Self::D {
-            v.set(i, self.get(i) * other.get(i));
+            v[i] = self[i] * other[i];
         }
         v
     }
@@ -187,7 +186,7 @@ pub trait VectorExt: Vector {
     fn amp(&self, value: Self::Num) -> Self {
         let mut v = Self::zero();
         for i in 0..Self::D {
-            v.set(i, self.get(i) * value);
+            v[i] = self[i] * value;
         }
         v
     }
@@ -195,7 +194,7 @@ pub trait VectorExt: Vector {
     fn div(&self, other: &Self) -> Self {
         let mut v = Self::zero();
         for i in 0..Self::D {
-            v.set(i, self.get(i) / other.get(i));
+            v[i] = self[i] / other[i];
         }
         v
     }
@@ -219,7 +218,7 @@ pub trait VectorExt: Vector {
     fn dot(&self, other: &Self) -> Self::Num {
         let mut sum = Self::Num::ZERO;
         for i in 0..Self::D {
-            sum = sum + self.get(i) * other.get(i);
+            sum = sum + self[i] * other[i];
         }
         sum
     }
@@ -239,18 +238,6 @@ impl<T: Number, const D: usize> Vector for [T; D] {
 
     fn zero_f64() -> impl Vector<Num = f64> {
         [0.0; D]
-    }
-
-    fn get(&self, i: AxisIndex) -> Self::Num {
-        self[i]
-    }
-
-    fn get_mut(&mut self, i: AxisIndex) -> &mut Self::Num {
-        &mut self[i]
-    }
-
-    fn set(&mut self, i: AxisIndex, value: Self::Num) {
-        self[i] = value;
     }
 }
 
@@ -492,7 +479,7 @@ impl<V: Vector> AabbRect<V> {
     pub fn center(&self) -> V {
         let mut center = V::zero();
         for i in 0..V::D {
-            center.set(i, (self.min[i] + self.max[i]) / (V::Num::ONE + V::Num::ONE));
+            center[i] = (self.min[i] + self.max[i]) / (V::Num::ONE + V::Num::ONE);
         }
         center
     }
