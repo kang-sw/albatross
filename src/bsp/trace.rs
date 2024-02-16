@@ -176,8 +176,6 @@ pub fn create_line_region_cutter<V: Vector>(
     end: V,
     query_margin: <V as Vector>::Num,
 ) -> impl Fn(&AabbRect<V>, AxisIndex, V::Num) -> [AabbRect<V>; 2] {
-    // FIXME: Broken logic
-
     let v_dir = end.sub(&start);
     let dir_norm = v_dir.norm();
     let u_dir = v_dir.amp(dir_norm.inv());
