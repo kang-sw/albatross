@@ -33,6 +33,14 @@ pub trait Number:
     fn rsqrt(self) -> Self {
         self.sqrt().inv()
     }
+
+    fn acos(self) -> Self {
+        unimplemented!()
+    }
+
+    fn sin(self) -> Self {
+        unimplemented!()
+    }
 }
 
 pub trait Vector:
@@ -98,20 +106,20 @@ pub trait NumExt: Number {
 impl<T: Number> NumExt for T {}
 
 pub trait VectorExt: Vector {
-    fn minimum() -> Self {
+    fn from_fn(set: impl Fn(AxisIndex) -> Self::Num) -> Self {
         let mut v = Self::zero();
         for i in 0..Self::D {
-            v[i] = Self::Num::MINVALUE;
+            v[i] = set(i);
         }
         v
     }
 
+    fn minimum() -> Self {
+        Self::from_fn(|_| Self::Num::MINVALUE)
+    }
+
     fn maximum() -> Self {
-        let mut v = Self::zero();
-        for i in 0..Self::D {
-            v[i] = Self::Num::MAXVALUE;
-        }
-        v
+        Self::from_fn(|_| Self::Num::MAXVALUE)
     }
 
     fn max_component(&self) -> Self::Num {
@@ -137,67 +145,35 @@ pub trait VectorExt: Vector {
     }
 
     fn min_values(&self, other: &Self) -> Self {
-        let mut v = Self::zero();
-        for i in 0..Self::D {
-            v[i] = self[i].min_value(other[i]);
-        }
-        v
+        Self::from_fn(|i| self[i].min_value(other[i]))
     }
 
     fn max_values(&self, other: &Self) -> Self {
-        let mut v = Self::zero();
-        for i in 0..Self::D {
-            v[i] = self[i].max_value(other[i]);
-        }
-        v
+        Self::from_fn(|i| self[i].max_value(other[i]))
     }
 
-    fn values(&self, value: Self::Num) -> Self {
-        let mut v = Self::zero();
-        for i in 0..Self::D {
-            v[i] = value;
-        }
-        v
+    fn splat(&self, value: Self::Num) -> Self {
+        Self::from_fn(|_| value)
     }
 
     fn sub(&self, other: &Self) -> Self {
-        let mut v = Self::zero();
-        for i in 0..Self::D {
-            v[i] = self[i] - other[i];
-        }
-        v
+        Self::from_fn(|i| self[i] - other[i])
     }
 
     fn add(&self, other: &Self) -> Self {
-        let mut v = Self::zero();
-        for i in 0..Self::D {
-            v[i] = self[i] + other[i];
-        }
-        v
+        Self::from_fn(|i| self[i] + other[i])
     }
 
     fn mul(&self, other: &Self) -> Self {
-        let mut v = Self::zero();
-        for i in 0..Self::D {
-            v[i] = self[i] * other[i];
-        }
-        v
+        Self::from_fn(|i| self[i] * other[i])
     }
 
     fn amp(&self, value: Self::Num) -> Self {
-        let mut v = Self::zero();
-        for i in 0..Self::D {
-            v[i] = self[i] * value;
-        }
-        v
+        Self::from_fn(|i| self[i] * value)
     }
 
     fn div(&self, other: &Self) -> Self {
-        let mut v = Self::zero();
-        for i in 0..Self::D {
-            v[i] = self[i] / other[i];
-        }
-        v
+        Self::from_fn(|i| self[i] / other[i])
     }
 
     fn norm(&self) -> Self::Num {
@@ -210,6 +186,12 @@ pub trait VectorExt: Vector {
 
     fn distance(&self, other: &Self) -> Self::Num {
         self.distance_sqr(other).sqrt()
+    }
+
+    fn angle(&self, other: &Self) -> Self::Num {
+        let dot = self.dot(other);
+        let len = self.norm() * other.norm();
+        (dot / len).acos()
     }
 
     fn distance_sqr(&self, other: &Self) -> Self::Num {
@@ -308,6 +290,14 @@ mod _impl_fixed {
 
                 fn sqrt(self) -> Self {
                     self.sqrt()
+                }
+
+                fn acos(self) -> Self {
+                    self.acos()
+                }
+
+                fn sin(self) -> Self {
+                    self.sin()
                 }
             })*
         };
@@ -556,6 +546,14 @@ impl<V: Vector> AabbRect<V> {
         }
 
         Self { min, max }
+    }
+
+    pub fn expand_axis(&mut self, axis: AxisIndex, value: V::Num) {
+        if value > V::Num::ZERO {
+            self.min[axis] = self.min[axis] - value;
+        } else {
+            self.max[axis] = self.max[axis] - value;
+        }
     }
 
     pub fn move_by(&self, value: V) -> Self {
