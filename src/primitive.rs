@@ -26,6 +26,10 @@ pub trait Number:
     fn from_f64(value: f64) -> Self;
     fn from_int(value: i64) -> Self;
 
+    fn neg(self) -> Self {
+        unimplemented!()
+    }
+
     fn sqrt(self) -> Self {
         unimplemented!()
     }
@@ -188,12 +192,6 @@ pub trait VectorExt: Vector {
         self.distance_sqr(other).sqrt()
     }
 
-    fn angle(&self, other: &Self) -> Self::Num {
-        let dot = self.dot(other);
-        let len = self.norm() * other.norm();
-        (dot / len).acos()
-    }
-
     fn distance_sqr(&self, other: &Self) -> Self::Num {
         (self.sub(other)).norm_sqr()
     }
@@ -241,36 +239,29 @@ impl<T: Number, const D: usize> Vector for nalgebra::SVector<T, D> {
 #[doc(hidden)]
 mod _impl_fixed {
     use super::Number;
+
+    #[cfg(feature = "fixed")]
     use fixed::*;
 
     macro_rules! define_minmax {
-        ($($ty:ty), *) => {
-            $(impl Number for $ty {
-                const MINVALUE: Self = Self::MIN;
-                const MAXVALUE: Self = Self::MAX;
-                const ONE: Self = 1;
-                const ZERO: Self = 0;
+        /* --------------------------------------- Basics --------------------------------------- */
 
-                fn to_f64(&self) -> f64 {
-                    *self as f64
-                }
-
-                fn from_f64(value: f64) -> Self {
-                    value as Self
-                }
-
-                fn from_int(value: i64) -> Self {
-                    value as Self
-                }
-            })*
+        (i, $($ty:ty), *) => {
+            $(define_minmax!(base, $ty, def_neg);)*
         };
-    }
 
-    define_minmax!(i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize);
+        (u, $($ty:ty), *) => {
+            $(define_minmax!(base, $ty);)*
+        };
 
-    macro_rules! define_minmax_float {
-        ($($ty:ty), *) => {
-            $(impl Number for $ty {
+        (f, $($ty:ty), *) => {
+            $(define_minmax!(base, $ty, def_neg, def_math, def_rsqrt);)*
+        };
+
+        /* -------------------------------------- Utilities ------------------------------------- */
+
+        (base, $ty:ty $(,$args:tt)*) => {
+            impl Number for $ty {
                 const MINVALUE: Self = Self::MIN;
                 const MAXVALUE: Self = Self::MAX;
                 const ONE: Self = 1 as _;
@@ -288,25 +279,12 @@ mod _impl_fixed {
                     value as Self
                 }
 
-                fn sqrt(self) -> Self {
-                    self.sqrt()
-                }
-
-                fn acos(self) -> Self {
-                    self.acos()
-                }
-
-                fn sin(self) -> Self {
-                    self.sin()
-                }
-            })*
+                $(define_minmax!($args);)*
+            }
         };
-    }
 
-    define_minmax_float!(f32, f64);
-
-    macro_rules! define_minmax_fixed {
-        ($ty:ident <$t:ident>, $tr:ident) => {
+        (fx, $ty:ident <$t:ident>, $tr:ident $(, $arg:tt)*) => {
+            #[cfg(feature = "fixed")]
             impl<$t: fixed::types::extra::$tr> Number for $ty<$t> {
                 const MINVALUE: Self = Self::MIN;
                 const MAXVALUE: Self = Self::MAX;
@@ -324,19 +302,51 @@ mod _impl_fixed {
                 fn from_int(value: i64) -> Self {
                     Self::const_from_int(value as _)
                 }
+
+                define_minmax!($($arg)*);
             }
         };
+
+        (def_neg) => {
+            fn neg(self) -> Self {
+                -self
+            }
+        };
+
+        (def_math) => {
+            fn sqrt(self) -> Self {
+                self.sqrt()
+            }
+            fn acos(self) -> Self {
+                self.acos()
+            }
+            fn sin(self) -> Self {
+                self.sin()
+            }
+        };
+
+        (def_rsqrt) => {
+            fn rsqrt(self) -> Self {
+                // TODO: Find more efficient way to calculate rsqrt
+                1. / self.sqrt()
+            }
+        }
     }
-    define_minmax_fixed!(FixedI8<T>, LeEqU8);
-    define_minmax_fixed!(FixedU8<T>, LeEqU8);
-    define_minmax_fixed!(FixedI16<T>, LeEqU16);
-    define_minmax_fixed!(FixedU16<T>, LeEqU16);
-    define_minmax_fixed!(FixedI32<T>, LeEqU32);
-    define_minmax_fixed!(FixedU32<T>, LeEqU32);
-    define_minmax_fixed!(FixedI64<T>, LeEqU64);
-    define_minmax_fixed!(FixedU64<T>, LeEqU64);
-    define_minmax_fixed!(FixedI128<T>, LeEqU128);
-    define_minmax_fixed!(FixedU128<T>, LeEqU128);
+
+    define_minmax!(i, i8, i16, i32, i64, i128, isize);
+    define_minmax!(u, u8, u16, u32, u64, u128, usize);
+    define_minmax!(f, f32, f64);
+
+    define_minmax!(fx, FixedI8<T>, LeEqU8, def_neg);
+    define_minmax!(fx, FixedU8<T>, LeEqU8);
+    define_minmax!(fx, FixedI16<T>, LeEqU16, def_neg);
+    define_minmax!(fx, FixedU16<T>, LeEqU16);
+    define_minmax!(fx, FixedI32<T>, LeEqU32, def_neg);
+    define_minmax!(fx, FixedU32<T>, LeEqU32);
+    define_minmax!(fx, FixedI64<T>, LeEqU64, def_neg);
+    define_minmax!(fx, FixedU64<T>, LeEqU64);
+    define_minmax!(fx, FixedI128<T>, LeEqU128, def_neg);
+    define_minmax!(fx, FixedU128<T>, LeEqU128);
 }
 
 /* ---------------------------------------------------------------------------------------------- */

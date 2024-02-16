@@ -9,4 +9,5 @@ pub mod primitive;
 pub use slotmap::new_key_type as define_key;
 pub use slotmap::Key;
 
+#[cfg(feature = "fixed")]
 pub extern crate fixed;

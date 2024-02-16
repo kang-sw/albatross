@@ -9,7 +9,7 @@ slotmap = "1"
 slab = "0.4"
 
 tap = "1"
-fixed = { version = "1", features = ["num-traits"] }
+fixed = { version = "1", features = ["num-traits"], optional = true }
 
 thiserror = "1"
 
@@ -22,3 +22,4 @@ nalgebra = { version = "0.32", optional = true }
 
 [features]
 nalgebra = ["dep:nalgebra"]
+fixed = ["dep:fixed"]
