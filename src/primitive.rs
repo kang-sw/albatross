@@ -24,8 +24,12 @@ pub trait Number:
     fn from_f64(value: f64) -> Self;
     fn from_int(value: i64) -> Self;
 
-    fn try_sqrt(self) -> Option<Self> {
-        None
+    fn sqrt(self) -> Self {
+        unimplemented!()
+    }
+
+    fn rsqrt(self) -> Self {
+        self.sqrt().inv()
     }
 }
 
@@ -191,20 +195,7 @@ pub trait VectorExt: Vector {
     }
 
     fn norm(&self) -> Self::Num {
-        self.norm_sqr().try_sqrt().unwrap()
-    }
-
-    fn inv_norm(&self) -> Self::Num {
-        // TODO: Apply fast inverse square root
-        self.norm().inv()
-    }
-
-    fn dot(&self, other: &Self) -> Self::Num {
-        let mut sum = Self::Num::ZERO;
-        for i in 0..Self::D {
-            sum = sum + self.get(i) * other.get(i);
-        }
-        sum
+        self.norm_sqr().sqrt()
     }
 
     fn norm_sqr(&self) -> Self::Num {
@@ -213,6 +204,14 @@ pub trait VectorExt: Vector {
 
     fn dist_sqr(&self, other: &Self) -> Self::Num {
         (self.sub(other)).norm_sqr()
+    }
+
+    fn dot(&self, other: &Self) -> Self::Num {
+        let mut sum = Self::Num::ZERO;
+        for i in 0..Self::D {
+            sum = sum + self.get(i) * other.get(i);
+        }
+        sum
     }
 }
 
@@ -295,8 +294,8 @@ mod _impl_fixed {
                     value as Self
                 }
 
-                fn try_sqrt(self) -> Option<Self> {
-                    Some(self.sqrt())
+                fn sqrt(self) -> Self {
+                    self.sqrt()
                 }
             })*
         };
@@ -655,14 +654,61 @@ impl<V: Vector> LineSegment<V> {
         }
     }
 
-    pub fn distance_from_sqr(&self, p_dst: &V) -> V::Num {
+    pub fn dist_point_sqr(&self, p_dst: &V) -> V::Num {
+        self.nearest(p_dst).dist_sqr(p_dst)
+    }
+
+    pub fn dist_line_sqr(&self, other: &Self) -> V::Num {
+        let [a, b] = self.nearest_pair(other);
+        a.dist_sqr(&b)
+    }
+
+    pub fn nearest(&self, p_dst: &V) -> V {
         let l = self;
 
         let v_to_dst = p_dst.sub(&l.p_start);
         let s_perpend_len = l.u_d.dot(&v_to_dst).clamp(V::Num::ZERO, l.s_norm);
-        let p_perpend = l.p_start.add(&l.u_d.amp(s_perpend_len));
 
-        p_perpend.dist_sqr(p_dst)
+        l.p_start.add(&l.u_d.amp(s_perpend_len))
+    }
+
+    /// Find closest point pair between lines
+    pub fn nearest_pair(&self, other: &Self) -> [V; 2] {
+        let p_l2e = other.calc_p_end();
+
+        let Self { p_start: p_l1s, .. } = self;
+        let Self {
+            p_start: p_l2s,
+            s_norm: s_l2_len,
+            u_d: u_l2,
+        } = other;
+
+        // @see https://zalo.github.io/blog/closest-point-between-segments/
+        let l1 = self;
+
+        // Project other line's start/end points upon this line's plane
+        let p_proj_l2s = l1.proj_as_plane(p_l2s);
+        let p_proj_l2e = l1.proj_as_plane(&p_l2e);
+
+        // From projected line, calculate t of l1
+        let v_proj = p_proj_l2e.sub(&p_proj_l2s);
+        let s_proj_sqr = v_proj.norm_sqr();
+        let t_l2 = if s_proj_sqr.is_zero() {
+            V::Num::ZERO
+        } else {
+            (p_l1s.sub(&p_proj_l2s).dot(&v_proj) / s_proj_sqr).clamp(Number::ZERO, *s_l2_len)
+        };
+
+        let p_l2_nearest = p_l2s.add(&u_l2.amp(*s_l2_len * t_l2));
+        let p_l1_nearest = l1.nearest(&p_l2_nearest);
+
+        [p_l1_nearest, p_l2_nearest]
+    }
+
+    /// Interpreting the line segment as plane, project the given point onto the plane.
+    pub fn proj_as_plane(&self, p: &V) -> V {
+        let v = p.sub(&self.p_start);
+        p.sub(&self.u_d.amp(self.u_d.dot(&v)))
     }
 
     pub fn u_d(&self) -> &V {

@@ -29,14 +29,14 @@ impl<T: Element> Tree<T> {
             for (elem_id, elem) in self.leaf_iter(node) {
                 let matches = match elem.data.extent() {
                     TraceShape::Sphere(radius) => {
-                        collision::intersects::capsule_sphere(&line, radius, &elem.pos, radius)
+                        collision::check::capsule_sphere(&line, radius, &elem.pos, radius)
                     }
                     TraceShape::Aabb(ext) => {
-                        collision::intersects::capsule_center_extent(&line, radius, &elem.pos, &ext)
+                        collision::check::capsule_center_extent(&line, radius, &elem.pos, &ext)
                     }
                     TraceShape::Capsule { dir, radius } => {
                         let elem_line = LineSegment::from_capsule(*p_start, dir);
-                        collision::intersects::capsule_capsule(&line, radius, &elem_line, radius)
+                        collision::check::capsule_capsule(&line, radius, &elem_line, radius)
                     }
                 };
 
@@ -61,15 +61,15 @@ impl<T: Element> Tree<T> {
             for (elem_id, elem) in self.leaf_iter(node) {
                 let matches = match elem.data.extent() {
                     TraceShape::Sphere(elem_rad) => {
-                        collision::intersects::sphere_sphere(center, radius, &elem.pos, elem_rad)
+                        collision::check::sphere_sphere(center, radius, &elem.pos, elem_rad)
                     }
                     TraceShape::Aabb(ext) => {
                         let aabb = AabbRect::new_extent(elem.pos, ext);
-                        collision::intersects::aabb_sphere(&aabb, center, radius)
+                        collision::check::aabb_sphere(&aabb, center, radius)
                     }
                     TraceShape::Capsule { dir: line, radius } => {
                         let elem_line = LineSegment::from_capsule(elem.pos, line);
-                        collision::intersects::capsule_sphere(&elem_line, radius, center, radius)
+                        collision::check::capsule_sphere(&elem_line, radius, center, radius)
                     }
                 };
 
@@ -90,15 +90,15 @@ impl<T: Element> Tree<T> {
             for (elem_id, elem) in self.leaf_iter(node) {
                 let matches = match elem.data.extent() {
                     TraceShape::Sphere(rad) => {
-                        collision::intersects::aabb_sphere(region, &elem.pos, rad)
+                        collision::check::aabb_sphere(region, &elem.pos, rad)
                     }
                     TraceShape::Aabb(ext) => {
                         let aabb = AabbRect::new_extent(elem.pos, ext);
-                        collision::intersects::aabb_aabb(region, &aabb)
+                        collision::check::aabb_aabb(region, &aabb)
                     }
                     TraceShape::Capsule { dir: line, radius } => {
                         let elem_line = LineSegment::from_capsule(elem.pos, line);
-                        collision::intersects::capsule_center_extent(
+                        collision::check::capsule_center_extent(
                             &elem_line,
                             radius,
                             &region.center(),

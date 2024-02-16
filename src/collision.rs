@@ -1,4 +1,4 @@
-pub mod intersects {
+pub mod check {
     use crate::primitive::{AabbRect, LineSegment, NumExt, Number, Vector, VectorExt};
 
     #[inline]
@@ -23,7 +23,7 @@ pub mod intersects {
         c: &V,
         r: V::Num,
     ) -> bool {
-        capsule_line.distance_from_sqr(c) < (capsule_r + r).sqr()
+        capsule_line.dist_point_sqr(c) < (capsule_r + r).sqr()
     }
 
     pub fn capsule_center_extent<V: Vector>(
@@ -65,7 +65,7 @@ pub mod intersects {
             // in this step as we're going to double-check it later.
             let approx_dist_sqr = r_aabb_sqr + capsule_r.sqr() + l * capsule_r * two;
 
-            if approx_dist_sqr < capsule_line.distance_from_sqr(center) {
+            if approx_dist_sqr < capsule_line.dist_point_sqr(center) {
                 // Bounding sphere disjoints; early return. This false return always
                 // valid; i.e. There's no false negative.
                 return false;
@@ -141,7 +141,7 @@ pub mod intersects {
                 }
 
                 // Calculate distance between the line and the collision
-                let dist_sqr = line.distance_from_sqr(&v_c);
+                let dist_sqr = line.dist_point_sqr(&v_c);
 
                 if dist_sqr <= capsule_r.sqr() {
                     // Any of the hyperplane intersects with the capsule
@@ -160,46 +160,26 @@ pub mod intersects {
         c2_line: &LineSegment<V>,
         c2_r: V::Num,
     ) -> bool {
-        todo!()
+        c1_line.dist_line_sqr(c2_line) <= (c1_r + c2_r).sqr()
     }
 }
 
 #[cfg(test)]
 mod __tests {
-    use super::intersects;
+    use super::check;
 
     #[test]
     fn test_sphere_sphere() {
         // Fully intersected
-        assert!(intersects::sphere_sphere(
-            &[0.0, 0.0],
-            1.0,
-            &[0.0, 0.0],
-            1.0
-        ));
+        assert!(check::sphere_sphere(&[0.0, 0.0], 1.0, &[0.0, 0.0], 1.0));
 
         // Partially intersected
-        assert!(intersects::sphere_sphere(
-            &[0.0, 1.0],
-            1.0,
-            &[0.0, 0.0],
-            1.0
-        ));
+        assert!(check::sphere_sphere(&[0.0, 1.0], 1.0, &[0.0, 0.0], 1.0));
 
         // Joint
-        assert!(intersects::sphere_sphere(
-            &[0.0, 2.0],
-            1.0,
-            &[0.0, 0.0],
-            1.0
-        ));
+        assert!(check::sphere_sphere(&[0.0, 2.0], 1.0, &[0.0, 0.0], 1.0));
 
         // Disjoint
-        assert!(!intersects::sphere_sphere(
-            &[0.0, 3.0],
-            1.0,
-            &[0.0, 0.0],
-            1.0
-        ));
+        assert!(!check::sphere_sphere(&[0.0, 3.0], 1.0, &[0.0, 0.0], 1.0));
     }
 }
