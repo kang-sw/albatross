@@ -1,8 +1,14 @@
 mod boids;
 
-use albatross::{bitindex::BitIndexSet, bsp::OptimizeParameter};
+use albatross::{
+    bitindex::BitIndexSet,
+    bsp::{OptimizeParameter, TraceShape},
+    primitive::DirectionSegment,
+};
 use egui::RichText;
 use web_time::Instant;
+
+use self::boids::BOID_TRACE_EXTENT;
 
 #[derive(Default)]
 pub struct TemplateApp {
@@ -12,6 +18,15 @@ pub struct TemplateApp {
     spawning_predator: bool,
     once: std::sync::OnceLock<()>,
     tick_time: f64,
+    collision_test: CollisionTestMode,
+}
+
+#[derive(Default)]
+enum CollisionTestMode {
+    #[default]
+    Aabb,
+    Sphere,
+    Capsule(f32),
 }
 
 impl TemplateApp {
@@ -182,6 +197,102 @@ impl eframe::App for TemplateApp {
 
                         ui.checkbox(&mut self.render_opt.draw_grid, "Draw Grid?");
                     });
+
+                    ui.separator();
+
+                    // Collision shape
+                    {
+                        ui.label("Trace Shape");
+                        ui.add_space(3.);
+
+                        let ext = BOID_TRACE_EXTENT.get();
+                        ui.columns(3, |c| {
+                            let new_ext = if c[0]
+                                .radio(matches!(ext, TraceShape::Aabb(..)), "AABB")
+                                .clicked()
+                            {
+                                Some(TraceShape::Aabb(Default::default()))
+                            } else if c[1]
+                                .radio(matches!(ext, TraceShape::Sphere(..)), "Sphere")
+                                .clicked()
+                            {
+                                Some(TraceShape::Sphere(Default::default()))
+                            } else if c[2]
+                                .radio(matches!(ext, TraceShape::Capsule { .. }), "Capsule")
+                                .clicked()
+                            {
+                                Some(TraceShape::Capsule {
+                                    dir: DirectionSegment::new([0., 0.1]),
+                                    radius: 0.0,
+                                })
+                            } else {
+                                None
+                            };
+
+                            if let Some(ext) = new_ext {
+                                BOID_TRACE_EXTENT.set(ext);
+                            }
+                        });
+
+                        match BOID_TRACE_EXTENT.get() {
+                            TraceShape::Aabb([mut x, mut y]) => {
+                                let mut changed = false;
+                                for (label, value) in [("x", &mut x), ("y", &mut y)] {
+                                    changed |= ui.columns(2, |cols| {
+                                        cols[0].label(label);
+                                        cols[1]
+                                            .add(egui::DragValue::new(value).speed(0.001))
+                                            .changed()
+                                    });
+                                }
+
+                                if changed {
+                                    BOID_TRACE_EXTENT.set(TraceShape::Aabb([x, y]));
+                                }
+                            }
+                            TraceShape::Sphere(mut rad) => {
+                                let changed = ui.columns(2, |cols| {
+                                    cols[0].label("Radius");
+                                    cols[1]
+                                        .add(egui::DragValue::new(&mut rad).speed(0.001))
+                                        .changed()
+                                });
+
+                                if changed {
+                                    BOID_TRACE_EXTENT.set(TraceShape::Sphere(rad));
+                                }
+                            }
+                            TraceShape::Capsule { dir, mut radius } => {
+                                let mut changed = false;
+                                let [mut x, mut y] = dir.calc_v_dir();
+
+                                for (label, value) in [("x", &mut x), ("y", &mut y)] {
+                                    changed |= ui.columns(2, |cols| {
+                                        cols[0].label(label);
+                                        cols[1]
+                                            .add(egui::DragValue::new(value).speed(0.001))
+                                            .changed()
+                                    });
+                                }
+
+                                changed |= ui.columns(2, |cols| {
+                                    cols[0].label("Radius");
+                                    cols[1]
+                                        .add(egui::DragValue::new(&mut radius).speed(0.001))
+                                        .changed()
+                                });
+
+                                if changed {
+                                    BOID_TRACE_EXTENT.set(TraceShape::Capsule {
+                                        dir: DirectionSegment::new([x, y]),
+                                        radius,
+                                    });
+                                }
+                            }
+                        }
+                    }
+
+                    ui.separator();
 
                     let OptimizeParameter {
                         split_threshold,

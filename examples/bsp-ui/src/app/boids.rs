@@ -1,4 +1,7 @@
-use std::collections::{BTreeSet, VecDeque};
+use std::{
+    cell::Cell,
+    collections::{BTreeSet, VecDeque},
+};
 
 use albatross::{
     bitindex::BitIndexSet,
@@ -25,6 +28,10 @@ albatross::define_key!(
     struct ElementIndex;
 );
 
+thread_local! {
+    pub static BOID_TRACE_EXTENT: Cell<TraceShape<[f32;2]>> = Cell::new(TraceShape::Sphere(BOID_SIZE));
+}
+
 impl bsp::Element for BspData {
     type Vector = [f32; 2];
     type ElemKey = ElementIndex;
@@ -32,7 +39,7 @@ impl bsp::Element for BspData {
     type LeafData = ();
 
     fn extent(&self) -> TraceShape<Self::Vector> {
-        TraceShape::Sphere(BOID_SIZE)
+        BOID_TRACE_EXTENT.get()
     }
 }
 
@@ -579,39 +586,10 @@ impl Model {
             );
         }
 
-        // Draw boid sights
-        for (_entity, (boid, predetor)) in self.ecs.query::<(&BoidKinetic, &IsPredator)>().iter() {
-            let pos = to_screen(boid.pos, offset, zoom);
-
-            let Some(cursor_pos) = ui.input(|i| i.pointer.hover_pos()) else {
-                continue;
-            };
-
-            if egui::Pos2::from(pos).distance(cursor_pos) > 50. {
-                continue;
-            }
-
-            p.circle_stroke(
-                pos.into(),
-                self.view_radius * zoom * if predetor.0 { 2. } else { 1. },
-                Stroke {
-                    color: egui::Color32::YELLOW,
-                    width: 1.0,
-                },
-            );
-
-            p.circle_stroke(
-                pos.into(),
-                self.near_radius * zoom,
-                Stroke {
-                    color: egui::Color32::RED,
-                    width: 1.0,
-                },
-            );
-        }
-
         resp
     }
+
+    pub fn draw_trace(&self, ui: &mut egui::Ui, origin: [f32; 2], trace: TraceShape<[f32; 2]>) {}
 }
 
 pub fn to_world(screen: egui::Pos2, offset: [f32; 2], zoom: f32) -> [f32; 2] {
