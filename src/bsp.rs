@@ -1,9 +1,9 @@
 mod optimize;
 mod trace;
 
-use std::mem::replace;
+use std::{fmt::Debug, mem::replace};
 
-use crate::primitive::{AabbRect, AxisIndex, LineDirection, Number, Vector};
+use crate::primitive::{AabbRect, AxisIndex, DirectionSegment, Number, Vector};
 use enum_as_inner::EnumAsInner;
 use slab::Slab;
 use slotmap::{Key, SlotMap};
@@ -52,14 +52,14 @@ pub struct Tree<T: Element> {
     root: T::NodeKey,
 }
 
-#[derive(Clone, EnumAsInner)]
+#[derive(Debug, Clone, EnumAsInner)]
 enum TreeNode<T: Element> {
     Split(TreeNodeSplit<T>),
     Leaf(TreeNodeLeaf<T>),
 }
 
 /// Splits the region into two parts based on the specified axis and value(hyperplane).
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct TreeNodeSplit<T: Element> {
     pub axis: u8,
@@ -74,7 +74,7 @@ pub struct TreeNodeSplit<T: Element> {
     balance_bias: i32,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct TreeNodeLeaf<T: Element> {
     head: T::ElemKey,
     tail: T::ElemKey, // To quickly merge two leaves
@@ -85,7 +85,7 @@ struct TreeNodeLeaf<T: Element> {
 /// Separate body of leaf node to reduce memory usage, as split node count is mostly 1:1
 /// with leaf node count, and the leaf node size easily exceeds split node size in order
 /// of magnitude.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct LeafNodeBody<T: Element> {
     pub bound: AabbRect<T::Vector>,
     pub data: T::LeafData,
@@ -94,7 +94,7 @@ pub struct LeafNodeBody<T: Element> {
 /* -------------------------------------- Trace Data Types -------------------------------------- */
 
 /// A shape descriptor for an element.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum TraceShape<V: Vector> {
     /// Value is extent of each axis for AABB.
     Aabb(V),
@@ -104,7 +104,7 @@ pub enum TraceShape<V: Vector> {
 
     /// Capsule extent; Line and radius
     Capsule {
-        dir: LineDirection<V>,
+        dir: DirectionSegment<V>,
         radius: V::Num,
     },
 }
@@ -126,18 +126,20 @@ impl<T: Element> Default for Tree<T> {
     }
 }
 
-impl<T> std::fmt::Debug for TreeNodeSplit<T>
+impl<T: Element> Debug for Tree<T>
 where
-    T: Element,
-    <T::Vector as Vector>::Num: std::fmt::Debug,
+    T::NodeKey: Debug,
+    T::ElemKey: Debug,
+    T: Debug,
+    T::Vector: Debug,
+    T::LeafData: Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TreeNodeSplit")
-            .field("axis", &self.axis)
-            .field("value", &self.value)
-            .field("minus", &self.minus)
-            .field("plus", &self.plus)
-            .field("initial_balance", &self.balance_bias)
+        f.debug_struct("Tree")
+            .field("nodes", &self.nodes)
+            .field("elems", &self.elems)
+            .field("leaf_bodies", &self.leaf_bodies)
+            .field("root", &self.root)
             .finish()
     }
 }
