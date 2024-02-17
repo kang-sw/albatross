@@ -51,8 +51,11 @@ pub trait Context: Sized {
     fn new_leaf_data(&mut self) -> Self::LeafData;
 
     /// Dispose leaf data. This won't be called when BSP tree is dropped. More precisely,
-    /// it is only called during optimization process.
-    fn cleanup_leaf_data(&mut self, _data: Self::LeafData) {}
+    /// it is only called during optimization process; when the leaf is merged into
+    /// another (new) leaf.
+    fn cleanup_leaf_data(&mut self, data: Self::LeafData) {
+        let _ = data;
+    }
 }
 
 /// A BSP tree implementation. Hard limit of tree depth is 65,535.

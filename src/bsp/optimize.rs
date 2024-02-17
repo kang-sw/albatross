@@ -474,6 +474,9 @@ pub(crate) fn impl_collapse_recursive<T: Context>(
 
             let leaf_body = tree.leaf_bodies.remove(leaf.body_id as _);
 
+            // Call disposer for leaf data
+            tree.context.cleanup_leaf_data(leaf_body.data);
+
             // Extend parent bound
             bounds[0] = bounds[0].min_values(leaf_body.bound.min());
             bounds[1] = bounds[1].max_values(leaf_body.bound.max());
