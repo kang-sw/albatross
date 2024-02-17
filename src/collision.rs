@@ -32,7 +32,6 @@ pub mod check {
         center: &V,
         extent: &V,
     ) -> bool {
-        // FIXME: Broken logic
         debug_assert!(extent.min_component() >= V::Num::ZERO);
 
         //
@@ -169,8 +168,8 @@ pub mod check {
         c2_line: &LineSegment<V>,
         c2_r: V::Num,
     ) -> bool {
-        // FIXME: Broken Logic
-        c1_line.dist_line_sqr(c2_line) <= (c1_r + c2_r).sqr()
+        let [near_1, near_2] = c1_line.nearest_pair(c2_line);
+        near_1.distance_sqr(&near_2) <= (c1_r + c2_r).sqr()
     }
 }
 

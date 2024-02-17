@@ -97,6 +97,10 @@ pub trait NumExt: Number {
         self.min_value(max).max_value(min)
     }
 
+    fn clamp_0_1(self) -> Self {
+        self.clamp(Self::ZERO, Self::ONE)
+    }
+
     fn clamp_unordered(self, a: Self, b: Self) -> Self {
         let [min, max] = if a < b { [a, b] } else { [b, a] };
         self.clamp(min, max)
@@ -194,6 +198,11 @@ pub trait VectorExt: Vector {
 
     fn norm_sqr(&self) -> Self::Num {
         self.dot(self)
+    }
+
+    /// Only meaningful when `self` is normal
+    fn proj(&self, other: &Self) -> Self {
+        self.amp(self.dot(other))
     }
 
     fn distance(&self, other: &Self) -> Self::Num {
@@ -685,11 +694,6 @@ impl<V: Vector> LineSegment<V> {
         self.nearest(p_dst).distance_sqr(p_dst)
     }
 
-    pub fn dist_line_sqr(&self, other: &Self) -> V::Num {
-        let [a, b] = self.nearest_pair(other);
-        a.distance_sqr(&b)
-    }
-
     pub fn nearest(&self, p_dst: &V) -> V {
         let l = self;
 
@@ -701,45 +705,39 @@ impl<V: Vector> LineSegment<V> {
 
     /// Find closest point pair between lines
     pub fn nearest_pair(&self, other: &Self) -> [V; 2] {
-        let p_l2e = other.calc_p_end();
-
-        let Self { p_start: p_l1s, .. } = self;
-        let Self {
-            p_start: p_l2s,
-            s_norm: s_l2_len,
-            u_d: u_l2,
-        } = other;
+        // FIXME: Broken Logic
+        let ab = self;
+        let cd = other;
 
         // @see https://zalo.github.io/blog/closest-point-between-segments/
-        let l1 = self;
 
-        // Project other line's start/end points upon this line's plane
-        let p_proj_l2s = l1.proj_as_plane(p_l2s);
-        let p_proj_l2e = l1.proj_as_plane(&p_l2e);
+        // Make hyperplane from CD, and project AB onto CD. It makes CD into a dot; thus
+        // nearest point of AB can be found.
 
-        // From projected line, calculate t of l1
-        let v_proj = p_proj_l2e.sub(&p_proj_l2s);
-        let s_proj_sqr = v_proj.norm_sqr();
-        let t_l2 = if s_proj_sqr.is_zero() {
-            V::Num::ZERO
-        } else {
-            (p_l1s.sub(&p_proj_l2s).dot(&v_proj) / s_proj_sqr).clamp(Number::ZERO, *s_l2_len)
-        };
+        let plane_cd = Hyperplane::from_line(cd);
+        let p_pl_a = plane_cd.project_pos(&ab.p_start);
+        let p_pl_b = plane_cd.project_pos(&ab.calc_p_end());
+        let t = line_find_t(&p_pl_a, &p_pl_b, &cd.p_start);
+        let mut p_ab_to_cd = ab.by_t(t.clamp_0_1());
 
-        let p_l2_nearest = p_l2s.add(&u_l2.amp(*s_l2_len * t_l2));
-        let p_l1_nearest = l1.nearest(&p_l2_nearest);
+        // Here; p_ab_to_cd is not complete; where t can overflow or underflow valid range
+        // of line norm. Hence, constrain it to valid range.
+        let p_cd_to_ab = cd.nearest(&p_ab_to_cd);
+        p_ab_to_cd = ab.nearest(&p_cd_to_ab);
 
-        [p_l1_nearest, p_l2_nearest]
-    }
-
-    /// Interpreting the line segment as plane, project the given point onto the plane.
-    pub fn proj_as_plane(&self, p: &V) -> V {
-        let v = p.sub(&self.p_start);
-        p.sub(&self.u_d.amp(self.u_d.dot(&v)))
+        [p_ab_to_cd, p_cd_to_ab]
     }
 
     pub fn u_d(&self) -> &V {
         &self.u_d
+    }
+
+    pub fn by_t(&self, t: V::Num) -> V {
+        self.by_len(self.s_norm * t)
+    }
+
+    pub fn by_len(&self, len: V::Num) -> V {
+        self.p_start.add(&self.u_d.amp(len))
     }
 
     pub fn set_end(&mut self, p_end: V) {
@@ -749,7 +747,20 @@ impl<V: Vector> LineSegment<V> {
     }
 
     pub fn calc_p_end(&self) -> V {
-        self.p_start.add(&self.u_d.amp(self.s_norm))
+        self.by_len(self.s_norm)
+    }
+}
+
+/// Calculates the `t` value, which is the alpha value to the foot of the perpendicular
+/// from `pos` to the line.
+pub fn line_find_t<V: Vector>(start: &V, end: &V, pos: &V) -> V::Num {
+    let v_se = end.sub(start);
+    let base = v_se.norm_sqr();
+
+    if base.is_zero() {
+        V::Num::ZERO
+    } else {
+        pos.sub(start).dot(&v_se) / base
     }
 }
 
@@ -813,6 +824,17 @@ impl<V: Vector> Hyperplane<V> {
         Self { d, n }
     }
 
+    pub fn from_line(l: &LineSegment<V>) -> Self {
+        let d = l.u_d.dot(&l.p_start);
+        Self { d, n: l.u_d }
+    }
+
+    pub fn project_pos(&self, pos: &V) -> V {
+        let p_plane = self.calc_p();
+        let v = pos.sub(&p_plane);
+        pos.sub(&self.n.proj(&v))
+    }
+
     /// Line:
     ///
     ///     p_L + t * u_L, where 0 <= t <= s, s is line length
@@ -836,7 +858,7 @@ impl<V: Vector> Hyperplane<V> {
     ///
     ///     p_H = p_L + t_0 * u_L, where u_P dot u_L != 0
     pub fn contact_point(&self, line: &LineSegment<V>) -> Option<V> {
-        let dot_p_l = self.n.dot(line.u_d());
+        let dot_p_l = self.n.dot(&line.u_d);
         if dot_p_l.is_zero() {
             return None;
         }

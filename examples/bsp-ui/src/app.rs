@@ -49,7 +49,7 @@ impl eframe::App for TemplateApp {
                 style.visuals = egui::Visuals::dark();
             });
 
-            self.model.spawn_boids(1000, [0., 0.], false);
+            self.model.spawn_boids(100, [0., 0.], false);
         });
 
         ctx.request_repaint();
