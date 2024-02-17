@@ -2,19 +2,33 @@ use super::*;
 
 #[test]
 fn test() {
+    #[derive(Default)]
+    struct MyCtx;
+
+    #[derive(Clone)]
     struct MyElem {
         index: usize,
         relocated: bool,
     }
 
-    impl Element for MyElem {
+    impl Context for MyCtx {
         type Vector = [i32; 3];
         type ElemKey = ElemKey;
         type NodeKey = NodeKey;
         type LeafData = ();
+        type Element = MyElem;
 
-        fn relocated(&mut self, _owner: NodeKey) {
-            self.relocated = true;
+        fn new_leaf_data(&mut self) -> Self::LeafData {
+            // Do nothing.
+        }
+
+        fn relocated(
+            &mut self,
+            _new_owner: Self::NodeKey,
+            _elem_id: Self::ElemKey,
+            elem: &mut Self::Element,
+        ) {
+            elem.relocated = true;
         }
     }
 
@@ -32,7 +46,7 @@ fn test() {
         }
     };
 
-    let mut bsp = Tree::new();
+    let mut bsp = Tree::<MyCtx>::new();
     let id_1 = bsp.insert([5, 0, 0], new_elem());
     let id_2 = bsp.insert([-5, 0, 0], new_elem());
 

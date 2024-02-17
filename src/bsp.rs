@@ -19,16 +19,23 @@ pub const NUM_MAX_AXIS: usize = 64;
 /* ---------------------------------------------------------------------------------------------- */
 
 /// A trait which represents actual data type of BSP.
-pub trait Element {
+pub trait Context: Sized {
+    type Element: Clone;
     type Vector: Vector;
     type NodeKey: Key;
     type ElemKey: Key;
 
     /// Any data type that implements [`Default`] and [`Clone`] can be put into leaf node.
-    type LeafData: Default + Clone;
+    type LeafData: Clone;
 
     /// Mark this element moved.
-    fn relocated(&mut self, _owner: Self::NodeKey) {}
+    fn relocated(
+        &mut self,
+        _new_owner: Self::NodeKey,
+        _elem_id: Self::ElemKey,
+        _elem: &mut Self::Element,
+    ) {
+    }
 
     /// Returns the radius of this element. This does not affect to BSP tree itself,
     /// however, referred by tracing methods when evaluating collision.
@@ -36,16 +43,24 @@ pub trait Element {
     /// It does not provide 100% perfect result when the shape is much larger than minimum
     /// split size or at some corner cases. Therefore it is recommended to set some margin
     /// when evaluating collision rectangle.
-    fn extent(&self) -> TraceShape<Self::Vector> {
+    fn extent(&self, _elem: &TreeElement<Self>) -> TraceShape<Self::Vector> {
         TraceShape::Sphere(Number::ZERO)
     }
+
+    /// Create a new leaf data.
+    fn new_leaf_data(&mut self) -> Self::LeafData;
+
+    /// Dispose leaf data. This won't be called when BSP tree is dropped. More precisely,
+    /// it is only called during optimization process.
+    fn cleanup_leaf_data(&mut self, _data: Self::LeafData) {}
 }
 
 /// A BSP tree implementation. Hard limit of tree depth is 65,535.
 ///
 /// Each leaf node can contain 2^31-1 elements. (MSB is reserved)
 #[derive(Clone)]
-pub struct Tree<T: Element> {
+pub struct Tree<T: Context> {
+    pub context: T,
     nodes: SlotMap<T::NodeKey, TreeNode<T>>,
     elems: SlotMap<T::ElemKey, TreeElement<T>>,
     leaf_bodies: Slab<LeafNodeBody<T>>,
@@ -53,7 +68,7 @@ pub struct Tree<T: Element> {
 }
 
 #[derive(Debug, Clone, EnumAsInner)]
-enum TreeNode<T: Element> {
+enum TreeNode<T: Context> {
     Split(TreeNodeSplit<T>),
     Leaf(TreeNodeLeaf<T>),
 }
@@ -61,7 +76,7 @@ enum TreeNode<T: Element> {
 /// Splits the region into two parts based on the specified axis and value(hyperplane).
 #[derive(Debug, Clone)]
 #[non_exhaustive]
-pub struct TreeNodeSplit<T: Element> {
+pub struct TreeNodeSplit<T: Context> {
     pub axis: u8,
     pub value: <T::Vector as Vector>::Num,
 
@@ -75,7 +90,7 @@ pub struct TreeNodeSplit<T: Element> {
 }
 
 #[derive(Debug, Clone)]
-struct TreeNodeLeaf<T: Element> {
+struct TreeNodeLeaf<T: Context> {
     head: T::ElemKey,
     tail: T::ElemKey, // To quickly merge two leaves
     len: u32,
@@ -86,7 +101,7 @@ struct TreeNodeLeaf<T: Element> {
 /// with leaf node count, and the leaf node size easily exceeds split node size in order
 /// of magnitude.
 #[derive(Debug, Clone)]
-pub struct LeafNodeBody<T: Element> {
+pub struct LeafNodeBody<T: Context> {
     pub bound: AabbRect<T::Vector>,
     pub data: T::LeafData,
 }
@@ -111,7 +126,7 @@ pub enum TraceShape<V: Vector> {
 
 /* ----------------------------------------- Misc Impls ----------------------------------------- */
 
-impl<T: Element> TreeNodeSplit<T> {
+impl<T: Context> TreeNodeSplit<T> {
     #[inline(always)]
     pub fn axis(&self) -> usize {
         self.axis as usize
@@ -120,17 +135,21 @@ impl<T: Element> TreeNodeSplit<T> {
 
 /* ----------------------------------------- Trait Impls ---------------------------------------- */
 
-impl<T: Element> Default for Tree<T> {
+impl<T: Context> Default for Tree<T>
+where
+    T: Default,
+{
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T: Element> Debug for Tree<T>
+impl<T: Context> Debug for Tree<T>
 where
     T::NodeKey: Debug,
     T::ElemKey: Debug,
     T: Debug,
+    T::Element: Debug,
     T::Vector: Debug,
     T::LeafData: Debug,
 {
@@ -144,11 +163,34 @@ where
     }
 }
 
-/* --------------------------------------- Public Tree API -------------------------------------- */
+/* ---------------------------------------- Creation APIs --------------------------------------- */
 
-impl<T: Element> Tree<T> {
-    pub fn with_capacity(node_capacity: usize, elem_capacity: usize) -> Self {
+impl<T: Context> Tree<T> {
+    pub fn new() -> Self
+    where
+        T: Default,
+    {
+        Self::with_context(T::default())
+    }
+
+    pub fn with_capacity(node_capacity: usize, elem_capacity: usize) -> Self
+    where
+        T: Default,
+    {
+        Self::with_context_and_capacity(T::default(), node_capacity, elem_capacity)
+    }
+
+    pub fn with_context(context: T) -> Self {
+        Self::with_context_and_capacity(context, 0, 0)
+    }
+
+    pub fn with_context_and_capacity(
+        context: T,
+        node_capacity: usize,
+        elem_capacity: usize,
+    ) -> Self {
         Self {
+            context,
             nodes: SlotMap::with_capacity_and_key(node_capacity),
             leaf_bodies: Slab::with_capacity((node_capacity / 2 + 1).min(node_capacity)),
             elems: SlotMap::with_capacity_and_key(elem_capacity),
@@ -161,11 +203,11 @@ impl<T: Element> Tree<T> {
         let (root_node, ..) = self.create_leaf_node();
         self.root = root_node;
     }
+}
 
-    pub fn new() -> Self {
-        Self::with_capacity(0, 0)
-    }
+/* -------------------------------------------- APIs -------------------------------------------- */
 
+impl<T: Context> Tree<T> {
     pub fn len_all_elems(&self) -> usize {
         self.elems.len()
     }
@@ -259,12 +301,12 @@ impl<T: Element> Tree<T> {
     ///
     /// `id` is invalid.
     pub fn leaf_iter(&self, id: T::NodeKey) -> impl Iterator<Item = (T::ElemKey, &TreeElement<T>)> {
-        struct TreeIter<'a, T: Element> {
+        struct TreeIter<'a, T: Context> {
             tree: &'a Tree<T>,
             elem: T::ElemKey,
         }
 
-        impl<'a, T: Element> Iterator for TreeIter<'a, T> {
+        impl<'a, T: Context> Iterator for TreeIter<'a, T> {
             type Item = (T::ElemKey, &'a TreeElement<T>);
 
             fn next(&mut self) -> Option<Self::Item> {
@@ -316,7 +358,7 @@ impl<T: Element> Tree<T> {
     }
 
     pub fn visit_leaves(&self, mut insert: impl FnMut(T::NodeKey)) {
-        fn recurse<T: Element>(
+        fn recurse<T: Context>(
             tree: &Tree<T>,
             node: T::NodeKey,
             insert: &mut impl FnMut(T::NodeKey),
@@ -336,7 +378,7 @@ impl<T: Element> Tree<T> {
     }
 
     pub fn visit_leaves_with_depth(&self, at: T::NodeKey, mut insert: impl FnMut(u16, T::NodeKey)) {
-        fn recurse<T: Element>(
+        fn recurse<T: Context>(
             tree: &Tree<T>,
             node: T::NodeKey,
             depth: u16,
@@ -356,7 +398,7 @@ impl<T: Element> Tree<T> {
         recurse(self, at, 0, &mut insert);
     }
 
-    pub fn insert(&mut self, pos: T::Vector, entity: T) -> T::ElemKey {
+    pub fn insert(&mut self, pos: T::Vector, entity: T::Element) -> T::ElemKey {
         // NOTE: To not lookup `elem_pool` again after insertion, we cache position
         // firstly at here.
         let elem_index = self.elems.insert(TreeElement {
@@ -376,7 +418,7 @@ impl<T: Element> Tree<T> {
         elem_index
     }
 
-    pub fn remove(&mut self, id: T::ElemKey) -> Option<T> {
+    pub fn remove(&mut self, id: T::ElemKey) -> Option<T::Element> {
         if self.elems.contains_key(id) {
             // SAFETY: We've just checked whether the key exists.
             unsafe { self.unlink(id) };
@@ -434,7 +476,7 @@ impl<T: Element> Tree<T> {
     }
 }
 
-impl<T: Element> std::ops::Index<T::ElemKey> for Tree<T> {
+impl<T: Context> std::ops::Index<T::ElemKey> for Tree<T> {
     type Output = TreeElement<T>;
 
     fn index(&self, index: T::ElemKey) -> &Self::Output {
@@ -442,7 +484,7 @@ impl<T: Element> std::ops::Index<T::ElemKey> for Tree<T> {
     }
 }
 
-impl<T: Element> std::ops::IndexMut<T::ElemKey> for Tree<T> {
+impl<T: Context> std::ops::IndexMut<T::ElemKey> for Tree<T> {
     fn index_mut(&mut self, index: T::ElemKey) -> &mut Self::Output {
         &mut self.elems[index]
     }
@@ -450,7 +492,7 @@ impl<T: Element> std::ops::IndexMut<T::ElemKey> for Tree<T> {
 
 /* ---------------------------------------- Verification ---------------------------------------- */
 
-impl<T: Element> Tree<T> {
+impl<T: Context> Tree<T> {
     /// An API to check internal state. Solely debug purpose; thus do not use this!
     #[doc(hidden)]
     pub fn __debug_verify_tree_state(&self) -> Result<usize, String> {
@@ -549,7 +591,7 @@ impl<T: Element> Tree<T> {
 }
 /* ---------------------------------------- Internal APIs --------------------------------------- */
 
-impl<T: Element> Tree<T> {
+impl<T: Context> Tree<T> {
     /// # Safety
     ///
     /// `leaf` and `elem_index` both are valid element resides in `self`
@@ -633,7 +675,7 @@ impl<T: Element> Tree<T> {
     fn create_leaf_node(&mut self) -> (T::NodeKey, &mut TreeNodeLeaf<T>, &mut LeafNodeBody<T>) {
         let body_id = self.leaf_bodies.insert(LeafNodeBody {
             bound: AabbRect::maximum(),
-            data: T::LeafData::default(),
+            data: self.context.new_leaf_data(),
         });
 
         let leaf = self.nodes.insert(TreeNode::Leaf(TreeNodeLeaf {
@@ -660,7 +702,7 @@ impl<T: Element> Tree<T> {
             len: 0,
             body_id: self.leaf_bodies.insert(LeafNodeBody {
                 bound: AabbRect::maximum(),
-                data: T::LeafData::default(),
+                data: self.context.new_leaf_data(),
             }) as _,
         });
 
@@ -703,7 +745,7 @@ pub enum CutDirection {
     Minus,
 }
 
-impl<T: Element> Tree<T> {
+impl<T: Context> Tree<T> {
     /// This method performs a spatial query within a Binary Space Partitioning (BSP)
     /// region, efficiently organizing and querying geometric data. It requires a custom
     /// `cut` function provided by the caller to divide the given region into two separate
@@ -817,7 +859,7 @@ impl<T: Element> Tree<T> {
 
 /* ---------------------------------------- Update Logic ---------------------------------------- */
 
-impl<T: Element> Tree<T> {
+impl<T: Context> Tree<T> {
     /// This method updates the internal status of nodes within a tree structure and
     /// serves as a form of garbage collection (GC) for managing the elements within the
     /// tree. It accepts a visitor function that is invoked for each element in the tree.
@@ -960,13 +1002,15 @@ impl<T: Element> Tree<T> {
             // SAFETY: We know leaf and elem index both are valid.
             unsafe {
                 self.push_link_back(leaf, elem_index);
-                self.elems.get_unchecked_mut(elem_index).relocated(leaf);
+
+                let elem = self.elems.get_unchecked_mut(elem_index);
+                self.context.relocated(leaf, elem_index, elem);
             };
         }
     }
 }
 
-fn update_inner_recurse<T: Element, F: FnMut(&mut TreeElementEdit<T>)>(
+fn update_inner_recurse<T: Context, F: FnMut(&mut TreeElementEdit<T>)>(
     ctx: &mut (&mut Tree<T>, &mut F, T::ElemKey),
     node: T::NodeKey,
 ) {
@@ -1034,7 +1078,7 @@ fn update_inner_recurse<T: Element, F: FnMut(&mut TreeElementEdit<T>)>(
 
 /* ---------------------------------------- Node Visitor ---------------------------------------- */
 
-impl<T: Element> Tree<T> {
+impl<T: Context> Tree<T> {
     pub fn visit_split_nodes(&self, epoch: T::NodeKey, visit: &impl Fn(&TreeNodeSplit<T>)) {
         match &self.nodes[epoch] {
             TreeNode::Split(split) => {
@@ -1050,9 +1094,8 @@ impl<T: Element> Tree<T> {
 /* ----------------------------------------- Entity Type ---------------------------------------- */
 
 #[derive(Debug, Clone)]
-pub struct TreeElement<T: Element> {
-    data: T,
-
+pub struct TreeElement<T: Context> {
+    data: T::Element,
     pos: T::Vector,
 
     // Retaining owner
@@ -1071,7 +1114,7 @@ pub struct TreeElement<T: Element> {
     next: T::ElemKey,
 }
 
-impl<T: Element> TreeElement<T> {
+impl<T: Context> TreeElement<T> {
     pub fn pos(&self) -> &T::Vector {
         &self.pos
     }
@@ -1081,15 +1124,15 @@ impl<T: Element> TreeElement<T> {
     }
 }
 
-impl<E: Element> std::ops::Deref for TreeElement<E> {
-    type Target = E;
+impl<E: Context> std::ops::Deref for TreeElement<E> {
+    type Target = E::Element;
 
     fn deref(&self) -> &Self::Target {
         &self.data
     }
 }
 
-impl<E: Element> std::ops::DerefMut for TreeElement<E> {
+impl<E: Context> std::ops::DerefMut for TreeElement<E> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.data
     }
@@ -1097,14 +1140,14 @@ impl<E: Element> std::ops::DerefMut for TreeElement<E> {
 
 /* ---------------------------------------- Element Proxy --------------------------------------- */
 
-pub struct TreeElementEdit<'a, T: Element> {
+pub struct TreeElementEdit<'a, T: Context> {
     tree: &'a mut Tree<T>,
     elem: T::ElemKey,
     moved: bool,
     removed: bool,
 }
 
-impl<'a, T: Element> TreeElementEdit<'a, T> {
+impl<'a, T: Context> TreeElementEdit<'a, T> {
     fn new(this: &'a mut Tree<T>, elem: T::ElemKey) -> Self {
         debug_assert!(this.elems.contains_key(elem));
 
@@ -1152,7 +1195,7 @@ impl<'a, T: Element> TreeElementEdit<'a, T> {
     }
 }
 
-impl<T: Element> Drop for TreeElementEdit<'_, T> {
+impl<T: Context> Drop for TreeElementEdit<'_, T> {
     fn drop(&mut self) {
         if self.removed {
             // SAFETY: `self.elem` is valid.
@@ -1179,21 +1222,22 @@ impl<T: Element> Drop for TreeElementEdit<'_, T> {
                 debug_assert!(owner_id != leaf_id);
 
                 self.tree.push_link_back(leaf_id, self.elem);
-                self.tree.get_mut_unchecked(self.elem).relocated(leaf_id);
+                let elem = self.tree.elems.get_unchecked_mut(self.elem);
+                self.tree.context.relocated(leaf_id, self.elem, elem);
             };
         }
     }
 }
 
-impl<'a, E: Element> std::ops::Deref for TreeElementEdit<'a, E> {
-    type Target = E;
+impl<'a, E: Context> std::ops::Deref for TreeElementEdit<'a, E> {
+    type Target = E::Element;
 
     fn deref(&self) -> &Self::Target {
         &self._get_elem().data
     }
 }
 
-impl<'a, E: Element> std::ops::DerefMut for TreeElementEdit<'a, E> {
+impl<'a, E: Context> std::ops::DerefMut for TreeElementEdit<'a, E> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self._get_elem_mut().data
     }

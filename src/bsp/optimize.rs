@@ -3,7 +3,7 @@ use slotmap::Key;
 use tap::Pipe;
 use tap::Tap as _;
 
-use super::Element;
+use super::Context;
 use super::LeafNodeBody;
 use super::Tree;
 use super::TreeNode;
@@ -169,7 +169,7 @@ pub enum OptimizationEvent<K: Key> {
     Merge { from: K, into: K },
 }
 
-impl<T: Element> Tree<T> {
+impl<T: Context> Tree<T> {
     /// Optimizes the structure of the BSP tree according to specified parameters,
     /// enhancing its efficiency for spatial querying and management of geometric
     /// elements. This method evaluates the current state of the tree against the
@@ -322,7 +322,7 @@ macro_rules! f {
     };
 }
 
-pub(crate) fn recurse_phase_1_collapse<T: Element>(
+pub(crate) fn recurse_phase_1_collapse<T: Context>(
     context: &mut (
         &mut Tree<T>,
         &mut impl FnMut(OptimizationEvent<T::NodeKey>),
@@ -423,7 +423,7 @@ pub(crate) fn recurse_phase_1_collapse<T: Element>(
 /// # Safety
 ///
 /// node is VALID leaf node.
-unsafe fn impl_node_collapse<'a, T: Element>(
+unsafe fn impl_node_collapse<'a, T: Context>(
     tree: &'a mut Tree<T>,
     node: T::NodeKey,
     on_collapse: &mut impl FnMut(OptimizationEvent<T::NodeKey>),
@@ -439,7 +439,7 @@ unsafe fn impl_node_collapse<'a, T: Element>(
     tree.cvt_split_to_leaf(node);
 
     // Subnodes' bound will be merged into this.
-    let mut bounds: [<T as Element>::Vector; 2] = [
+    let mut bounds: [<T as Context>::Vector; 2] = [
         <T::Vector as VectorExt>::maximum(),
         <T::Vector as VectorExt>::minimum(),
     ];
@@ -454,7 +454,7 @@ unsafe fn impl_node_collapse<'a, T: Element>(
     (leaf, leaf_body)
 }
 
-pub(crate) fn impl_collapse_recursive<T: Element>(
+pub(crate) fn impl_collapse_recursive<T: Context>(
     tree: &mut Tree<T>,
     on_update: &mut impl FnMut(OptimizationEvent<T::NodeKey>),
     bounds: &mut [T::Vector; 2],
@@ -518,7 +518,7 @@ pub(crate) fn impl_collapse_recursive<T: Element>(
 }
 
 /* ----------------------------------- Phase 2: Split ----------------------------------- */
-pub(crate) fn recurse_phase_2_split<T: Element>(
+pub(crate) fn recurse_phase_2_split<T: Context>(
     context: &mut (
         &mut Tree<T>,
         &mut impl FnMut(OptimizationEvent<T::NodeKey>),
@@ -697,12 +697,12 @@ pub(crate) fn recurse_phase_2_split<T: Element>(
     recurse_phase_2_split(context, plus);
 }
 
-fn split_tree_at<T: Element>(
+fn split_tree_at<T: Context>(
     tree: &mut Tree<T>,
-    node: <T as Element>::NodeKey,
+    node: <T as Context>::NodeKey,
     axis: usize,
-    split_at: <<T as Element>::Vector as Vector>::Num,
-) -> (<T as Element>::NodeKey, <T as Element>::NodeKey) {
+    split_at: <<T as Context>::Vector as Vector>::Num,
+) -> (<T as Context>::NodeKey, <T as Context>::NodeKey) {
     // Create new splitted subnodes.
     let leaf = tree.nodes[node].as_leaf().unwrap();
     let bound = tree.leaf_bodies[leaf.body_id as usize].bound;
@@ -782,16 +782,14 @@ fn split_tree_at<T: Element>(
 
 /* ------------------------------------- Phase 3: Validation ------------------------------------ */
 
-pub(crate) fn recurse_phase_3_validate<T: Element>(tree: &mut Tree<T>, node_id: T::NodeKey) {
+pub(crate) fn recurse_phase_3_validate<T: Context>(tree: &mut Tree<T>, node_id: T::NodeKey) {
     // Simply visit all leaf nodes; then pick one.
     match tree.nodes[node_id] {
         TreeNode::Split(TreeNodeSplit { minus, plus, .. }) => {
             recurse_phase_3_validate(tree, minus);
             recurse_phase_3_validate(tree, plus);
         }
-        TreeNode::Leaf(TreeNodeLeaf {
-            head: mut head_id, ..
-        }) => {
+        TreeNode::Leaf(TreeNodeLeaf { head: head_id, .. }) => {
             // If head is null, every element of this node has empty owner for sure.
             let is_changed_node = tree
                 .elems
@@ -802,13 +800,15 @@ pub(crate) fn recurse_phase_3_validate<T: Element>(tree: &mut Tree<T>, node_id: 
                 return;
             }
 
-            while head_id.is_null() == false {
+            let mut next_head_id = head_id;
+            while next_head_id.is_null() == false {
                 unsafe {
-                    let head = tree.elems.get_unchecked_mut(head_id);
-                    head_id = head.next;
+                    let head = tree.elems.get_unchecked_mut(next_head_id);
+                    let head_id = next_head_id;
+                    next_head_id = head.next;
 
                     head.owner = node_id; // We don't care the previous owner value; it's just invalid.
-                    head.data.relocated(node_id);
+                    tree.context.relocated(node_id, head_id, head);
                 }
             }
         }
@@ -819,7 +819,7 @@ pub(crate) fn recurse_phase_3_validate<T: Element>(tree: &mut Tree<T>, node_id: 
 /*                                   MANUAL OPTIMIZATION METHODS                                  */
 /* ---------------------------------------------------------------------------------------------- */
 
-impl<T: Element> Tree<T> {
+impl<T: Context> Tree<T> {
     /// # Panics
     ///
     /// Panics if `node` is not a valid leaf node.

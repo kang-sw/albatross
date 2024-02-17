@@ -3,9 +3,9 @@ use crate::{
     primitive::{AabbRect, AxisIndex, LineSegment, NumExt, Number, Vector, VectorExt as _},
 };
 
-use super::{Element, TraceShape, Tree, TreeElement};
+use super::{Context, TraceShape, Tree, TreeElement};
 
-impl<T: Element> Tree<T> {
+impl<T: Context> Tree<T> {
     pub fn query_shape(
         &self,
         p_pivot: &T::Vector,
@@ -78,7 +78,7 @@ impl<T: Element> Tree<T> {
 
         let visitor = move |node: T::NodeKey| {
             for (elem_id, elem) in self.leaf_iter(node) {
-                let matches = match elem.data.extent() {
+                let matches = match self.context.extent(elem) {
                     TraceShape::Sphere(rad) => {
                         collision::check::capsule_sphere(&line, radius, &elem.pos, rad)
                     }
@@ -113,7 +113,7 @@ impl<T: Element> Tree<T> {
         let region = AabbRect::new_circular(*center, radius + query_margin);
         self.query_region(&region.extended_by_all(query_margin), |node| {
             for (elem_id, elem) in self.leaf_iter(node) {
-                let matches = match elem.data.extent() {
+                let matches = match self.context.extent(elem) {
                     TraceShape::Sphere(elem_rad) => {
                         collision::check::sphere_sphere(center, radius, &elem.pos, elem_rad)
                     }
@@ -147,7 +147,7 @@ impl<T: Element> Tree<T> {
         let q_extent = region.extent();
         self.query_region(&region.extended_by_all(query_margin), move |node| {
             for (elem_id, elem) in self.leaf_iter(node) {
-                let matches = match elem.data.extent() {
+                let matches = match self.context.extent(elem) {
                     TraceShape::Sphere(rad) => {
                         collision::check::aabb_sphere(region, &elem.pos, rad)
                     }
