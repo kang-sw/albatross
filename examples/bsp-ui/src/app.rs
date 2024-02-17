@@ -386,12 +386,19 @@ impl eframe::App for TemplateApp {
 
                     ui.separator();
 
+                    let mut split_strategy = self
+                        .model
+                        .tree_optimize
+                        .split_strategy()
+                        .first()
+                        .map(|x| x.1)
+                        .unwrap_or_default();
+
                     let OptimizeParameter {
                         split_threshold,
                         collapse_threshold,
                         max_collapse_height,
                         balancing,
-                        split_strategy,
                         minimum_length: minimum_size,
                         suboptimal_split_count: short_axis_fallback,
                         square_split_axes,
@@ -451,26 +458,27 @@ impl eframe::App for TemplateApp {
                     *short_axis_fallback = short_axis_fallback_u16 as u8;
 
                     let mut collapse_all = false;
+
                     ui.columns(2, |cols| {
                         use albatross::bsp::SplitStrategy::*;
-                        let prev = split_strategy.clone();
+                        let prev = split_strategy;
 
                         cols[0].label("Split Strategy");
                         cols[1].columns(3, |cols| {
-                            cols[0].selectable_value(split_strategy, Average, "Average");
+                            cols[0].selectable_value(&mut split_strategy, Average, "Average");
                             cols[1].selectable_value(
-                                split_strategy,
+                                &mut split_strategy,
                                 ClusterMedian,
                                 "Cluster Median",
                             );
                             cols[2].selectable_value(
-                                split_strategy,
+                                &mut split_strategy,
                                 SpatialMedian,
                                 "Spatial Median",
                             );
                         });
 
-                        if prev != *split_strategy {
+                        if prev != split_strategy {
                             collapse_all = true;
                         }
                     });
@@ -502,6 +510,10 @@ impl eframe::App for TemplateApp {
                     }
 
                     if collapse_all {
+                        self.model
+                            .tree_optimize
+                            .reset_split_strategy([(0, split_strategy)]);
+
                         self.model.collapse_all();
                     }
                 });

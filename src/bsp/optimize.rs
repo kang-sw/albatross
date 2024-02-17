@@ -17,7 +17,7 @@ use crate::primitive::Vector;
 use crate::primitive::VectorExt;
 
 #[non_exhaustive]
-#[derive(Default, Clone, Debug, PartialEq, Eq)]
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SplitStrategy {
     /// Selects the central point of a dataset as the split point by calculating the
     /// average position of all points. This method aims to divide the dataset around a
@@ -91,11 +91,8 @@ pub struct OptimizeParameter {
     /// before it starts to balance. This is default behavior for `moderate` setup.
     pub balancing: f32,
 
-    /// Specifies the algorithm used to calculate the split value when a node is divided
-    /// into two child nodes. This parameter influences the method used to determine the
-    /// optimal split point, affecting the spatial distribution of elements within the    
-    /// tree and the efficiency of spatial queries.
-    pub split_strategy: SplitStrategy, // TODO: Vec<(u16, SplitStrategy)> (until_depth, strategy)
+    /// Sorted table of split strategy table.
+    split_strategy: Vec<(u16, SplitStrategy)>,
 
     /// Specifies minimum length of leaf node when splitted.
     pub minimum_length: f64,
@@ -138,7 +135,7 @@ impl OptimizeParameter {
             collapse_threshold: split_count / 2,
             max_collapse_height: 8,
             balancing: 0.3,
-            split_strategy: SplitStrategy::SpatialMedian,
+            split_strategy: Default::default(),
             minimum_length: 0.,
             suboptimal_split_count: 1,
             square_split_axes: BitIndexSet::empty(),
@@ -153,13 +150,41 @@ impl OptimizeParameter {
             collapse_threshold: 0,
             max_collapse_height: u16::MAX,
             balancing: 0.,
-            split_strategy: SplitStrategy::Average,
+            split_strategy: Default::default(),
             minimum_length: 0.,
             suboptimal_split_count: 1,
             square_split_axes: BitIndexSet::empty(),
             balancing_start_height: 0,
             snap_size: 0.,
         }
+    }
+
+    pub fn add_split_strategy(&mut self, until: u16, strategy: SplitStrategy) -> &mut Self {
+        let lower_bound = self
+            .split_strategy
+            .binary_search_by_key(&until, |(x, _)| *x)
+            .unwrap_or_else(|e| e);
+
+        self.split_strategy.insert(lower_bound, (until, strategy));
+        self
+    }
+
+    /// Specifies the algorithm used to calculate the split value when a node is divided
+    /// into two child nodes. This parameter influences the method used to determine the
+    /// optimal split point, affecting the spatial distribution of elements within the    
+    /// tree and the efficiency of spatial queries.
+    pub fn reset_split_strategy(
+        &mut self,
+        strategy: impl IntoIterator<Item = (u16, SplitStrategy)>,
+    ) -> &mut Self {
+        self.split_strategy.clear();
+        self.split_strategy.extend(strategy);
+
+        self
+    }
+
+    pub fn split_strategy(&self) -> &[(u16, SplitStrategy)] {
+        &self.split_strategy
     }
 }
 
@@ -297,7 +322,7 @@ impl<T: Context> Tree<T> {
         let root = self.root;
         let context = &mut (self, &mut on_update, params);
         recurse_phase_1_collapse(context, root);
-        recurse_phase_2_split(context, root);
+        recurse_phase_2_split(context, root, 0);
         recurse_phase_3_validate(context.0, root);
     }
 }
@@ -552,12 +577,13 @@ pub(crate) fn recurse_phase_2_split<T: Context>(
         &OptimizeParameter,
     ),
     node: T::NodeKey,
+    depth: u16,
 ) {
     match f!(context.tree).nodes[node] {
         TreeNode::Split(TreeNodeSplit { minus, plus, .. }) => {
             // This is dead simple; just visit children nodes.
-            recurse_phase_2_split(context, minus);
-            recurse_phase_2_split(context, plus);
+            recurse_phase_2_split(context, minus, depth + 1);
+            recurse_phase_2_split(context, plus, depth + 1);
 
             return; // Returns early.
         }
@@ -667,7 +693,19 @@ pub(crate) fn recurse_phase_2_split<T: Context>(
             let split_min = bound.min()[axis].to_f64() + params.minimum_length;
             let split_max = bound.max()[axis].to_f64() - params.minimum_length;
 
-            let mut split_at = match params.split_strategy {
+            let table = &params.split_strategy;
+            let strategy = table
+                .binary_search_by_key(&depth, |(x, _)| *x)
+                .unwrap_or_else(|x| x)
+                .pipe(|x| {
+                    table
+                        .get(x)
+                        .or_else(|| table.last())
+                        .map(|x| x.1)
+                        .unwrap_or_default()
+                });
+
+            let mut split_at = match strategy {
                 SplitStrategy::Average => avg[axis],
                 ref x @ (SplitStrategy::SpatialMedian | SplitStrategy::ClusterMedian) => {
                     let positive_weight = *x == SplitStrategy::SpatialMedian;
@@ -720,8 +758,8 @@ pub(crate) fn recurse_phase_2_split<T: Context>(
         }
     };
 
-    recurse_phase_2_split(context, minus);
-    recurse_phase_2_split(context, plus);
+    recurse_phase_2_split(context, minus, depth + 1);
+    recurse_phase_2_split(context, plus, depth + 1);
 }
 
 fn split_tree_at<T: Context>(
