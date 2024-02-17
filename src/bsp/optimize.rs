@@ -17,11 +17,12 @@ use crate::primitive::Vector;
 use crate::primitive::VectorExt;
 
 #[non_exhaustive]
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Default, Clone, Debug, PartialEq, Eq)]
 pub enum SplitStrategy {
     /// Selects the central point of a dataset as the split point by calculating the
     /// average position of all points. This method aims to divide the dataset around a
     /// central value, providing a straightforward and intuitive splitting strategy.
+    #[default]
     Average,
 
     /// Enhances the average split point calculation by incorporating a weighted average,
@@ -30,7 +31,7 @@ pub enum SplitStrategy {
     /// aims to achieve a more spatially balanced partitioning by considering the
     /// distribution of points across the space, potentially leading to clusters that are
     /// more evenly spread out.
-    SpatialMedian,
+    SpatialMedian, // XXX: Weight?
 
     /// Modifies the average split point calculation by using weights inversely
     /// proportional to the distance from the average point. Closer points have a greater
@@ -94,7 +95,7 @@ pub struct OptimizeParameter {
     /// into two child nodes. This parameter influences the method used to determine the
     /// optimal split point, affecting the spatial distribution of elements within the    
     /// tree and the efficiency of spatial queries.
-    pub split_strategy: SplitStrategy,
+    pub split_strategy: SplitStrategy, // TODO: Vec<(u16, SplitStrategy)> (until_depth, strategy)
 
     /// Specifies minimum length of leaf node when splitted.
     pub minimum_length: f64,
