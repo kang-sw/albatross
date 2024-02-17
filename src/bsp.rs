@@ -20,7 +20,7 @@ pub const NUM_MAX_AXIS: usize = 64;
 
 /// A trait which represents actual data type of BSP.
 pub trait Context: Sized {
-    type Element: Clone;
+    type Element;
     type Vector: Vector;
     type NodeKey: Key;
     type ElemKey: Key;
@@ -61,7 +61,6 @@ pub trait Context: Sized {
 /// A BSP tree implementation. Hard limit of tree depth is 65,535.
 ///
 /// Each leaf node can contain 2^31-1 elements. (MSB is reserved)
-#[derive(Clone)]
 pub struct Tree<T: Context> {
     pub context: T,
     nodes: SlotMap<T::NodeKey, TreeNode<T>>,
@@ -144,6 +143,22 @@ where
 {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl<T: Context> Clone for Tree<T>
+where
+    T: Clone,
+    T::Element: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            context: self.context.clone(),
+            nodes: self.nodes.clone(),
+            elems: self.elems.clone(),
+            leaf_bodies: self.leaf_bodies.clone(),
+            root: self.root,
+        }
     }
 }
 
@@ -1096,7 +1111,7 @@ impl<T: Context> Tree<T> {
 
 /* ----------------------------------------- Entity Type ---------------------------------------- */
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct TreeElement<T: Context> {
     data: T::Element,
     pos: T::Vector,
@@ -1115,6 +1130,21 @@ pub struct TreeElement<T: Context> {
     owner: T::NodeKey,
     prev: T::ElemKey,
     next: T::ElemKey,
+}
+
+impl<T: Context> Clone for TreeElement<T>
+where
+    T::Element: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            data: self.data.clone(),
+            pos: self.pos,
+            owner: self.owner,
+            prev: self.prev,
+            next: self.next,
+        }
+    }
 }
 
 impl<T: Context> TreeElement<T> {
