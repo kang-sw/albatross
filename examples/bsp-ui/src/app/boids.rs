@@ -2,7 +2,7 @@ use std::collections::{BTreeSet, HashSet, VecDeque};
 
 use albatross::{
     bitindex::BitIndexSet,
-    bsp::{self, OptimizeParameter, TraceShape, TreeElement},
+    bsp::{self, OptimizeParameter, TraceComponent, TraceShape, TreeElement},
     primitive::{AabbRect, VectorExt},
 };
 use egui::{Color32, Stroke};
@@ -47,8 +47,11 @@ impl bsp::Context for BspContext {
 
     fn new_leaf_data(&mut self) -> Self::LeafData {}
 
-    fn extent(&self, _elem: &TreeElement<Self>) -> TraceShape<Self::Vector> {
-        self.shape
+    fn extent(&self, _elem: &TreeElement<Self>) -> TraceComponent<[f32; 2]> {
+        TraceComponent {
+            offset: [0.; 2],
+            shape: self.shape,
+        }
     }
 }
 
@@ -696,7 +699,7 @@ impl Model {
                     color: Color32::from_rgb(255, 0, 255),
                 };
 
-                draw_trace_shape(&p, origin, shape, color_bg, stroke, false, offset, zoom);
+                draw_trace_shape(&p, origin, shape, color_bg, stroke, [0.; 2], offset, zoom);
             }
 
             // Visualize query hit elements
@@ -714,7 +717,7 @@ impl Model {
                         width: 1.,
                         color: Color32::YELLOW,
                     },
-                    true,
+                    [0.; 2], // TODO: element shape offset
                     offset,
                     zoom,
                 );
@@ -742,10 +745,12 @@ fn draw_trace_shape(
     shape: TraceShape<[f32; 2]>,
     color_bg: egui::Color32,
     stroke: egui::Stroke,
-    should_offset_capsule: bool,
+    shape_offset: [f32; 2],
     offset: [f32; 2],
     zoom: f32,
 ) {
+    origin = origin.add(&shape_offset);
+
     match shape {
         TraceShape::Aabb(ext) => {
             let aabb = AabbRect::new_extent(origin, ext);
@@ -770,11 +775,6 @@ fn draw_trace_shape(
             // 2. Draw a line between two circles
             //    - This is a line connects two circles' center, and offset by
             //      radius to its orthogonal direction respectively.
-
-            // Offset origin by half direction
-            if should_offset_capsule {
-                origin = origin.sub(&dir.calc_v_dir().amp(0.5));
-            }
 
             let start = to_screen(origin.into(), offset, zoom);
             let end = to_screen(origin.add(&dir.calc_v_dir()).into(), offset, zoom);

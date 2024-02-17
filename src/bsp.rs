@@ -43,8 +43,11 @@ pub trait Context: Sized {
     /// It does not provide 100% perfect result when the shape is much larger than minimum
     /// split size or at some corner cases. Therefore it is recommended to set some margin
     /// when evaluating collision rectangle.
-    fn extent(&self, _elem: &TreeElement<Self>) -> TraceShape<Self::Vector> {
-        TraceShape::Sphere(Number::ZERO)
+    fn extent(&self, _elem: &TreeElement<Self>) -> TraceComponent<Self::Vector> {
+        TraceComponent {
+            offset: Self::Vector::zero(),
+            shape: TraceShape::Sphere(Number::ZERO),
+        }
     }
 
     /// Create a new leaf data.
@@ -111,10 +114,14 @@ pub struct LeafNodeBody<T: Context> {
 
 /* -------------------------------------- Trace Data Types -------------------------------------- */
 
-// TODO: TraceComponent: { offset: V, shape: TraceShape<V> }
-// - Which would give great flexibility, with some memory overhead, that is inline-able.
+/// A trace descriptor for an element.
+#[derive(Debug, Clone, Copy)]
+pub struct TraceComponent<T: Vector> {
+    pub offset: T,
+    pub shape: TraceShape<T>,
+}
 
-/// A shape descriptor for an element.
+///
 #[derive(Debug, Clone, Copy)]
 pub enum TraceShape<V: Vector> {
     /// Value is extent of each axis for AABB.

@@ -78,20 +78,25 @@ impl<T: Context> Tree<T> {
 
         let visitor = move |node: T::NodeKey| {
             for (elem_id, elem) in self.leaf_iter(node) {
-                let matches = match self.context.extent(elem) {
+                let com = self.context.extent(elem);
+                let elem_pos = elem.pos.add(&com.offset);
+
+                let matches = match com.shape {
                     TraceShape::Sphere(rad) => {
-                        collision::check::capsule_sphere(&line, radius, &elem.pos, rad)
+                        collision::check::capsule_sphere(&line, radius, &elem_pos, rad)
                     }
                     TraceShape::Aabb(ext) => {
-                        collision::check::capsule_center_extent(&line, radius, &elem.pos, &ext)
+                        collision::check::capsule_center_extent(&line, radius, &elem_pos, &ext)
                     }
                     TraceShape::Capsule {
                         dir,
                         radius: elem_rad,
-                    } => {
-                        let elem_line = LineSegment::from_capsule_centered(elem.pos, dir);
-                        collision::check::capsule_capsule(&line, radius, &elem_line, elem_rad)
-                    }
+                    } => collision::check::capsule_capsule(
+                        &line,
+                        radius,
+                        &LineSegment::from_capsule(elem_pos, dir),
+                        elem_rad,
+                    ),
                 };
 
                 if matches {
@@ -113,21 +118,26 @@ impl<T: Context> Tree<T> {
         let region = AabbRect::new_circular(*center, radius + query_margin);
         self.query_region(&region.extended_by_all(query_margin), |node| {
             for (elem_id, elem) in self.leaf_iter(node) {
-                let matches = match self.context.extent(elem) {
+                let com = self.context.extent(elem);
+                let elem_pos = elem.pos.add(&com.offset);
+
+                let matches = match com.shape {
                     TraceShape::Sphere(elem_rad) => {
-                        collision::check::sphere_sphere(center, radius, &elem.pos, elem_rad)
+                        collision::check::sphere_sphere(center, radius, &elem_pos, elem_rad)
                     }
                     TraceShape::Aabb(ext) => {
-                        let aabb = AabbRect::new_extent(elem.pos, ext);
+                        let aabb = AabbRect::new_extent(elem_pos, ext);
                         collision::check::aabb_sphere(&aabb, center, radius)
                     }
                     TraceShape::Capsule {
                         dir,
                         radius: elem_rad,
-                    } => {
-                        let elem_line = LineSegment::from_capsule_centered(elem.pos, dir);
-                        collision::check::capsule_sphere(&elem_line, elem_rad, center, radius)
-                    }
+                    } => collision::check::capsule_sphere(
+                        &LineSegment::from_capsule(elem_pos, dir),
+                        elem_rad,
+                        center,
+                        radius,
+                    ),
                 };
 
                 if matches {
@@ -147,20 +157,23 @@ impl<T: Context> Tree<T> {
         let q_extent = region.extent();
         self.query_region(&region.extended_by_all(query_margin), move |node| {
             for (elem_id, elem) in self.leaf_iter(node) {
-                let matches = match self.context.extent(elem) {
+                let com = self.context.extent(elem);
+                let elem_pos = elem.pos.add(&com.offset);
+
+                let matches = match com.shape {
                     TraceShape::Sphere(rad) => {
-                        collision::check::aabb_sphere(region, &elem.pos, rad)
+                        collision::check::aabb_sphere(region, &elem_pos, rad)
                     }
                     TraceShape::Aabb(ext) => {
-                        let aabb = AabbRect::new_extent(elem.pos, ext);
+                        let aabb = AabbRect::new_extent(elem_pos, ext);
                         collision::check::aabb_aabb(region, &aabb)
                     }
-                    TraceShape::Capsule { dir, radius } => {
-                        let elem_line = LineSegment::from_capsule_centered(elem.pos, dir);
-                        collision::check::capsule_center_extent(
-                            &elem_line, radius, &q_center, &q_extent,
-                        )
-                    }
+                    TraceShape::Capsule { dir, radius } => collision::check::capsule_center_extent(
+                        &LineSegment::from_capsule(elem_pos, dir),
+                        radius,
+                        &q_center,
+                        &q_extent,
+                    ),
                 };
 
                 if matches {
@@ -171,6 +184,14 @@ impl<T: Context> Tree<T> {
     }
 
     // TODO: trace_cylinder => capsule + hyperplane check
+    pub fn trace_cylinder(
+        &self,
+        direction: &T::Vector,
+        radius: <T::Vector as Vector>::Num,
+        query_margin: <T::Vector as Vector>::Num,
+        mut visit: impl FnMut(T::NodeKey, T::ElemKey, &TreeElement<T>),
+    ) {
+    }
 
     // TODO: trace_obb =>  ?? Should we? rotation matters ...
 }
