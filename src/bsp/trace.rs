@@ -169,6 +169,10 @@ impl<T: Context> Tree<T> {
             }
         });
     }
+
+    // TODO: trace_cylinder => capsule + hyperplane check
+
+    // TODO: trace_obb =>  ?? Should we? rotation matters ...
 }
 
 pub fn create_line_region_cutter<V: Vector>(

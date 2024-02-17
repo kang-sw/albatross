@@ -111,6 +111,9 @@ pub struct LeafNodeBody<T: Context> {
 
 /* -------------------------------------- Trace Data Types -------------------------------------- */
 
+// TODO: TraceComponent: { offset: V, shape: TraceShape<V> }
+// - Which would give great flexibility, with some memory overhead, that is inline-able.
+
 /// A shape descriptor for an element.
 #[derive(Debug, Clone, Copy)]
 pub enum TraceShape<V: Vector> {
