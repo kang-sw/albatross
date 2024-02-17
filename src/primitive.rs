@@ -705,7 +705,6 @@ impl<V: Vector> LineSegment<V> {
 
     /// Find closest point pair between lines
     pub fn nearest_pair(&self, other: &Self) -> [V; 2] {
-        // FIXME: Broken Logic
         let ab = self;
         let cd = other;
 
@@ -718,14 +717,10 @@ impl<V: Vector> LineSegment<V> {
         let p_pl_a = plane_cd.project_pos(&ab.p_start);
         let p_pl_b = plane_cd.project_pos(&ab.calc_p_end());
         let t = line_find_t(&p_pl_a, &p_pl_b, &cd.p_start);
-        let mut p_ab_to_cd = ab.by_t(t.clamp_0_1());
+        let p_ab_to_cd_draft = ab.by_t(t.clamp_0_1());
 
-        // Here; p_ab_to_cd is not complete; where t can overflow or underflow valid range
-        // of line norm. Hence, constrain it to valid range.
-        let p_cd_to_ab = cd.nearest(&p_ab_to_cd);
-        p_ab_to_cd = ab.nearest(&p_cd_to_ab);
-
-        [p_ab_to_cd, p_cd_to_ab]
+        let p_cd_to_ab = cd.nearest(&p_ab_to_cd_draft);
+        [ab.nearest(&p_cd_to_ab), p_cd_to_ab]
     }
 
     pub fn u_d(&self) -> &V {
