@@ -99,7 +99,7 @@ pub trait NumExt: Number {
 
     fn clamp_unordered(self, a: Self, b: Self) -> Self {
         let [min, max] = if a < b { [a, b] } else { [b, a] };
-        self.min_value(min).max_value(max)
+        self.clamp(min, max)
     }
 
     fn sqr(self) -> Self {
@@ -791,5 +791,63 @@ impl<V: Vector> DirectionSegment<V> {
 
     pub fn calc_v_dir(&self) -> V {
         self.u_dir.amp(self.s_len)
+    }
+}
+
+/* -------------------------------------------- Plane ------------------------------------------- */
+
+/// Represent a plane with normal and distance from center.
+#[derive(Debug, Clone, Copy)]
+pub struct Hyperplane<V: Vector> {
+    pub d: V::Num,
+    n: V,
+}
+
+impl<V: Vector> Hyperplane<V> {
+    /// # Safety
+    ///
+    /// `n` is valid normal.
+    pub unsafe fn new_unchecked(n: V, d: V::Num) -> Self {
+        debug_assert!((n.norm_sqr() - V::Num::ONE).abs() < Number::from_f64(1e-4));
+
+        Self { d, n }
+    }
+
+    /// Line:
+    ///
+    ///     p_L + t * u_L, where 0 <= t <= s, s is line length
+    ///
+    /// Hyperplane:
+    ///
+    ///     p_P := Random point on the plane.
+    ///     u_P := Plane normal
+    ///     p_H := Contact point between plane and the line
+    ///
+    /// Following equation holds:
+    ///
+    ///     u_P dot ( p_H - p_P ) = 0
+    ///     u_P dot ( p_L + t_0 * u_L - p_P ) = 0 since p_H is point on the line.
+    ///        
+    /// Solving this equation for `t_0`:
+    ///
+    ///     t_0 = u_P dot ( p_P - p_L ) / u_P dot u_L
+    ///
+    /// Therefore, the contact point is:
+    ///
+    ///     p_H = p_L + t_0 * u_L, where u_P dot u_L != 0
+    pub fn contact_point(&self, line: &LineSegment<V>) -> Option<V> {
+        let dot_p_l = self.n.dot(line.u_d());
+        if dot_p_l.is_zero() {
+            return None;
+        }
+
+        let v_l_p = self.calc_p().sub(&line.p_start);
+        let t_0 = self.n.dot(&v_l_p) / dot_p_l;
+
+        Some(line.p_start.add(&line.u_d.amp(t_0)))
+    }
+
+    pub fn calc_p(&self) -> V {
+        self.n.amp(self.d)
     }
 }

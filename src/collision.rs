@@ -1,5 +1,5 @@
 pub mod check {
-    use crate::primitive::{AabbRect, LineSegment, NumExt, Number, Vector, VectorExt};
+    use crate::primitive::{AabbRect, Hyperplane, LineSegment, NumExt, Number, Vector, VectorExt};
 
     #[inline]
     pub fn sphere_sphere<V: Vector>(c_1: &V, r_1: V::Num, c_2: &V, r_2: V::Num) -> bool {
@@ -33,6 +33,7 @@ pub mod check {
         extent: &V,
     ) -> bool {
         // FIXME: Broken logic
+        debug_assert!(extent.min_component() >= V::Num::ZERO);
 
         //
         // Tries to avoid calculating `norm` of the extent as much as
@@ -113,29 +114,16 @@ pub mod check {
 
         for v_plane_p in [v_min, v_max] {
             for i in 0..V::D {
-                let u_plane_n = V::unit(i);
+                // SAFETY: V::unit(i) is always valid normal vector.
+                let plane = unsafe { Hyperplane::new_unchecked(V::unit(i), v_plane_p[i]) };
 
-                let dot_n_d = u_plane_n.dot(line.u_d());
-                let mut v_c = {
-                    let mut t = u_plane_n.dot(&v_plane_p.sub(&line.p_start));
+                // We're looking for the nearest point on the plane from the line. For
+                // this, the contact point will be clamped within the plane and the line
+                // range. Therefore, even when line and plane is parallel, it's just okay
+                // to returning any point of the line.
+                let mut v_c = plane.contact_point(line).unwrap_or(line.p_start);
 
-                    t = if dot_n_d.is_zero() {
-                        t / dot_n_d
-                    } else {
-                        V::Num::MAXVALUE
-                    };
-
-                    // Here we don't clamp `t` in line segment range; as we're
-                    // calculating the point laid on plane.
-                    line.p_start.add(&line.u_d().amp(t))
-                };
-
-                // Force the collision point to be on the plane. Usually it's satisfied
-                // without any additional operation, however, the above `dot_n_d` can be
-                // zero which makes the `t` to be NaN.
-                v_c[i] = v_plane_p[i];
-
-                // Clamp collision point in range
+                // Clamp collision point in range.
                 for k in 0..V::D {
                     if k != i {
                         // 1. Clamp to the line segment range first
@@ -143,6 +131,11 @@ pub mod check {
 
                         // 2. Then clamp to the plane range
                         v_c[k] = v_c[k].clamp(v_min[k], v_max[k]);
+                    } else {
+                        // Force the collision point to be on the plane. Usually it's satisfied
+                        // without any additional operation, however, the above `dot_n_d` can be
+                        // zero which makes the `t` to be NaN.
+                        v_c[k] = v_plane_p[i];
                     }
                 }
 
