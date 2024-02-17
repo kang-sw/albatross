@@ -112,6 +112,16 @@ pub mod check {
         let line = capsule_line;
         let line_p_end = line.calc_p_end();
 
+        // SAFETY: min, max is valid
+        if unsafe { AabbRect::new_unchecked(v_min, v_max) }.contains(&line.p_start) {
+            // Since the logic below only catches hyperplane contacts, the full inclusion
+            // can't be handled only with following algorithm. Therefore, here we firstly
+            // check if both points are within the boundary.
+            //
+            // If any of the point is inside the box, it can safely be treated as hit.
+            return true;
+        }
+
         for v_plane_p in [v_min, v_max] {
             for i in 0..V::D {
                 // SAFETY: V::unit(i) is always valid normal vector.
