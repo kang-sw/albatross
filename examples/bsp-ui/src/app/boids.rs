@@ -1,11 +1,8 @@
-use std::{
-    cell::Cell,
-    collections::{BTreeSet, HashSet, VecDeque},
-};
+use std::collections::{BTreeSet, HashSet, VecDeque};
 
 use albatross::{
     bitindex::BitIndexSet,
-    bsp::{self, Element, OptimizeParameter, TraceShape},
+    bsp::{self, Context, OptimizeParameter, TraceShape, TreeElement},
     primitive::{AabbRect, VectorExt},
 };
 use egui::{Color32, Stroke};
@@ -19,6 +16,19 @@ const PREDATOR_ARROW_LEN: f32 = 1.0;
 const BOID_COLOR: egui::Color32 = egui::Color32::WHITE;
 const PREDATOR_COLOR: egui::Color32 = egui::Color32::RED;
 
+struct BspContext {
+    shape: TraceShape<[f32; 2]>,
+}
+
+impl Default for BspContext {
+    fn default() -> Self {
+        Self {
+            shape: TraceShape::Sphere(BOID_SIZE),
+        }
+    }
+}
+
+#[derive(Clone)]
 struct BspData {
     entity: hecs::Entity,
 }
@@ -28,18 +38,17 @@ albatross::define_key!(
     struct ElementIndex;
 );
 
-thread_local! {
-    pub static BOID_TRACE_EXTENT: Cell<TraceShape<[f32;2]>> = Cell::new(TraceShape::Sphere(BOID_SIZE));
-}
-
-impl bsp::Element for BspData {
+impl bsp::Context for BspContext {
     type Vector = [f32; 2];
     type ElemKey = ElementIndex;
     type NodeKey = TreeNodeIndex;
     type LeafData = ();
+    type Element = BspData;
 
-    fn extent(&self) -> TraceShape<Self::Vector> {
-        BOID_TRACE_EXTENT.get()
+    fn new_leaf_data(&mut self) -> Self::LeafData {}
+
+    fn extent(&self, _elem: &TreeElement<Self>) -> TraceShape<Self::Vector> {
+        self.shape
     }
 }
 
@@ -57,7 +66,7 @@ struct IsPredator(bool);
 
 pub struct Model {
     ecs: hecs::World,
-    bsp: bsp::Tree<BspData>,
+    bsp: bsp::Tree<BspContext>,
 
     rand: fastrand::Rng,
 
@@ -398,6 +407,14 @@ impl Model {
     pub fn clear_hit_test(&mut self) {
         self.hit_test = None;
     }
+
+    pub fn extent_mut(&mut self) -> &mut TraceShape<[f32; 2]> {
+        &mut self.bsp.context.shape
+    }
+
+    pub fn extent(&self) -> &TraceShape<[f32; 2]> {
+        &self.bsp.context.shape
+    }
 }
 
 /* ---------------------------------------- Rendering --------------------------------------- */
@@ -683,10 +700,10 @@ impl Model {
             }
 
             // Visualize query hit elements
+            let shape = self.bsp.context.shape;
 
             for elem_id in hit_test_elems.iter().cloned() {
                 let elem = &self.bsp[elem_id];
-                let shape = elem.extent();
 
                 draw_trace_shape(
                     &p,

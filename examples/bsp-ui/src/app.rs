@@ -8,7 +8,7 @@ use albatross::{
 use egui::RichText;
 use web_time::Instant;
 
-use self::boids::{BOID_SIZE, BOID_TRACE_EXTENT};
+use self::boids::BOID_SIZE;
 
 #[derive(Default)]
 pub struct TemplateApp {
@@ -297,7 +297,7 @@ impl eframe::App for TemplateApp {
                         ui.label("Trace Shape");
                         ui.add_space(3.);
 
-                        let ext = BOID_TRACE_EXTENT.get();
+                        let ext = *self.model.extent();
                         ui.columns(3, |c| {
                             let new_ext = if c[0]
                                 .radio(matches!(ext, TraceShape::Aabb(..)), "AABB")
@@ -322,11 +322,11 @@ impl eframe::App for TemplateApp {
                             };
 
                             if let Some(ext) = new_ext {
-                                BOID_TRACE_EXTENT.set(ext);
+                                *self.model.extent_mut() = ext;
                             }
                         });
 
-                        match BOID_TRACE_EXTENT.get() {
+                        match *self.model.extent() {
                             TraceShape::Aabb([mut x, mut y]) => {
                                 let mut changed = false;
                                 for (label, value) in [("x", &mut x), ("y", &mut y)] {
@@ -339,7 +339,7 @@ impl eframe::App for TemplateApp {
                                 }
 
                                 if changed {
-                                    BOID_TRACE_EXTENT.set(TraceShape::Aabb([x, y]));
+                                    *self.model.extent_mut() = TraceShape::Aabb([x, y]);
                                 }
                             }
                             TraceShape::Sphere(mut rad) => {
@@ -351,7 +351,7 @@ impl eframe::App for TemplateApp {
                                 });
 
                                 if changed {
-                                    BOID_TRACE_EXTENT.set(TraceShape::Sphere(rad));
+                                    *self.model.extent_mut() = TraceShape::Sphere(rad);
                                 }
                             }
                             TraceShape::Capsule { dir, mut radius } => {
@@ -375,10 +375,10 @@ impl eframe::App for TemplateApp {
                                 });
 
                                 if changed {
-                                    BOID_TRACE_EXTENT.set(TraceShape::Capsule {
+                                    *self.model.extent_mut() = TraceShape::Capsule {
                                         dir: DirectionSegment::new([x, y]),
                                         radius,
-                                    });
+                                    };
                                 }
                             }
                         }
