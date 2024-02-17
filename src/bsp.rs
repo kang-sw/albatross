@@ -96,6 +96,7 @@ struct TreeNodeLeaf<T: Context> {
     head: T::ElemKey,
     tail: T::ElemKey, // To quickly merge two leaves
     len: u32,
+    init_len: u32,
     body_id: u32,
 }
 
@@ -700,6 +701,7 @@ impl<T: Context> Tree<T> {
             head: T::ElemKey::null(),
             tail: T::ElemKey::null(),
             len: 0,
+            init_len: 0,
             body_id: body_id as _,
         }));
 
@@ -718,6 +720,7 @@ impl<T: Context> Tree<T> {
             head: T::ElemKey::null(),
             tail: T::ElemKey::null(),
             len: 0,
+            init_len: 0,
             body_id: self.leaf_bodies.insert(LeafNodeBody {
                 bound: AabbRect::maximum(),
                 data: self.context.new_leaf_data(),

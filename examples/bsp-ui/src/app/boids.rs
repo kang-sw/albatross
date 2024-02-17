@@ -2,7 +2,7 @@ use std::collections::{BTreeSet, HashSet, VecDeque};
 
 use albatross::{
     bitindex::BitIndexSet,
-    bsp::{self, Context, OptimizeParameter, TraceShape, TreeElement},
+    bsp::{self, OptimizeParameter, TraceShape, TreeElement},
     primitive::{AabbRect, VectorExt},
 };
 use egui::{Color32, Stroke};

@@ -306,7 +306,8 @@ impl<T: Context> Tree<T> {
 
 pub(crate) struct P1Report {
     height: u16,
-    count: u32,
+    total_count: u32,
+    total_init_count: u32,
 }
 
 /* ---------------------------------- Phase 1: Collapse --------------------------------- */
@@ -342,18 +343,19 @@ pub(crate) fn recurse_phase_1_collapse<T: Context>(
             let r_p = recurse_phase_1_collapse(context, plus);
             let height = r_m.height.max(r_p.height);
 
-            let params = f!(context.params);
             let collapse = 'collapse: {
+                let params = f!(context.params);
+
                 // Just don't try to do anything if lower depth exceeds allowed maximum
                 if height > params.max_collapse_height {
                     break 'collapse false;
                 }
 
-                let cnt_m = r_m.count as usize;
-                let cnt_p = r_p.count as usize;
-                let total = cnt_m + cnt_p;
+                let cnt_m = r_m.total_count;
+                let cnt_p = r_p.total_count;
+                let total_count = cnt_m + cnt_p;
 
-                if total == 0 {
+                if total_count == 0 {
                     break 'collapse true;
                 }
 
@@ -367,7 +369,7 @@ pub(crate) fn recurse_phase_1_collapse<T: Context>(
                     }
 
                     let larger_count = cnt_m.max(cnt_p) as f32;
-                    let balance = r_p.count as i32 - r_m.count as i32;
+                    let balance = r_p.total_count as i32 - r_m.total_count as i32;
 
                     // Adjust the initial balance to avoid unnecessary merge/split
                     // operations that could be triggered by a false-positive from a leaf
@@ -385,7 +387,21 @@ pub(crate) fn recurse_phase_1_collapse<T: Context>(
                     balance_rate < params.balancing
                 };
 
-                if !unbalanced && !not_balancing_height {
+                let total_init_count = r_m.total_init_count + r_p.total_init_count;
+
+                // Bias compensation occurs when the tree is determined to be 'balanced'
+                let mut compensate_bias = !unbalanced;
+
+                // ... Check if tree balancing is enabled ...
+                compensate_bias &= !not_balancing_height;
+
+                // ... And only when total_count is reduced than the initial count.
+                compensate_bias &= total_count < total_init_count;
+
+                // "Compensation" is rolling back the initial balance bias to zero, to
+                // prevent the tree from being biased towards one side by biased crowd
+                // locomotion.
+                if compensate_bias {
                     // Compensate initial balance by 1 on every iteration. This prevents
                     // unbalance branch gets deeper endlessly.
                     let split = f!(context.tree).nodes[node].as_split_mut().unwrap();
@@ -396,7 +412,7 @@ pub(crate) fn recurse_phase_1_collapse<T: Context>(
                     .collapse_threshold
                     .min(params.split_threshold.max(1) - 1);
 
-                unbalanced || total <= collapse_thres as usize
+                unbalanced || total_count <= collapse_thres
             };
 
             if collapse {
@@ -404,19 +420,26 @@ pub(crate) fn recurse_phase_1_collapse<T: Context>(
 
                 // SAFETY: node is valid split reference.
                 let count = unsafe { impl_node_collapse(tree, node, on_update) }.0.len;
+                debug_assert!(count == r_m.total_count + r_p.total_count);
 
-                P1Report { height: 0, count }
+                P1Report {
+                    height: 0,
+                    total_count: count,
+                    total_init_count: r_m.total_init_count + r_p.total_init_count,
+                }
             } else {
                 P1Report {
                     height: height + 1,
-                    count: r_m.count + r_p.count,
+                    total_count: r_m.total_count + r_p.total_count,
+                    total_init_count: r_m.total_init_count + r_p.total_init_count,
                 }
             }
         }
 
         TreeNode::Leaf(ref leaf) => P1Report {
             height: 0,
-            count: leaf.len,
+            total_count: leaf.len,
+            total_init_count: leaf.init_len,
         },
     }
 }
@@ -757,6 +780,10 @@ fn split_tree_at<T: Context>(
             }
         }
     }
+
+    // Update initial length
+    minus.init_len = minus.len;
+    plus.init_len = plus.len;
 
     let [len_minus, len_plus] = [minus.len, plus.len];
 
