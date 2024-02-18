@@ -833,6 +833,7 @@ impl<V: Vector> DirectionSegment<V> {
 /* -------------------------------------- Plane: Positional ------------------------------------- */
 
 /// Represent a plane, centered with given position.
+#[derive(Debug, Clone, Copy)]
 pub struct PositionalPlane<V: Vector> {
     pub p: V,
     n: V,
@@ -864,7 +865,7 @@ impl<V: Vector> PositionalPlane<V> {
         pos.sub(&self.n.proj(&v))
     }
 
-    pub fn signed_distance_sqr(&self, pos: &V) -> V::Num {
+    pub fn signed_distance(&self, pos: &V) -> V::Num {
         let v = pos.sub(&self.p);
         v.dot(&self.n)
     }
@@ -956,7 +957,7 @@ impl<V: Vector> Hyperplane<V> {
     }
 
     pub fn signed_distance_sqr(&self, pos: &V) -> V::Num {
-        self.to_positional().signed_distance_sqr(pos)
+        self.to_positional().signed_distance(pos)
     }
 
     pub fn flipped(self) -> Self {

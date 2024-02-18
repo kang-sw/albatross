@@ -134,43 +134,38 @@ pub mod check {
     ) -> bool {
         let dist_sqr = cy_line.dist_point_sqr(sph_center);
 
-        if (cy_radius + sph_radius).sqr() > dist_sqr {
+        if dist_sqr > (cy_radius + sph_radius).sqr() {
             // Farer than maximum allowed distance
             return false;
         }
 
-        check_cylinder_hyperplane_with_sphere(*cy_line, sph_center, sph_radius).is_ok()
+        check_cylinder_hyperplane_with_sphere(cy_line, sph_center, sph_radius).is_ok()
     }
 
     struct NoIntersection;
 
     /// Returns the hyperplane if sphere is outside of any of the cylinder's hyperplane.
     fn check_cylinder_hyperplane_with_sphere<V: Vector>(
-        mut cy_line: LineSegment<V>,
+        cy_line: &LineSegment<V>,
         sph_center: &V,
         sph_radius: V::Num,
     ) -> Result<Option<PositionalPlane<V>>, NoIntersection> {
         // Check two hyperplanes of the cylinder, compare it with given radius.
 
         // hp bottom,
-        let hp1 = PositionalPlane::from_line(&cy_line);
-
-        cy_line.p_start = cy_line.calc_p_end();
-        let hp2 = PositionalPlane::from_line(&cy_line);
+        let hp1 = PositionalPlane::from_line(cy_line);
+        let hp2 = { hp1 }.tap_mut(|x| x.p = cy_line.calc_p_end());
 
         // Distance 1 is negated since its normal is heading to inside of the cylinder.
-        let s_dist_sqr_1 = hp1.signed_distance_sqr(sph_center).neg();
-        let s_dist_sqr_2 = hp2.signed_distance_sqr(sph_center);
-
-        // Check if the sphere hits the cylinder capsule plane actually.
-        let sphere_rad_sqr = sph_radius.sqr();
+        let s_dist_1 = hp1.signed_distance(sph_center).neg();
+        let s_dist_2 = hp2.signed_distance(sph_center);
 
         // Both distance are negative => it's just inside.
-        if s_dist_sqr_1 <= sphere_rad_sqr && s_dist_sqr_2 <= sphere_rad_sqr {
-            if s_dist_sqr_1.is_positive() {
+        if s_dist_1 <= sph_radius && s_dist_2 <= sph_radius {
+            if s_dist_1.is_positive() {
                 // `hp1` normal is heading to inside of the cylinder.
                 Ok(Some(hp1.flipped()))
-            } else if s_dist_sqr_2.is_positive() {
+            } else if s_dist_2.is_positive() {
                 Ok(Some(hp2))
             } else {
                 // It's just between the hyperplanes.
@@ -195,7 +190,7 @@ pub mod check {
         }
 
         // Then check cylinder
-        check_cylinder_hyperplane_with_sphere(*cy_line, &v_near_cap, cap_radius).is_ok()
+        check_cylinder_hyperplane_with_sphere(cy_line, &v_near_cap, cap_radius).is_ok()
     }
 
     pub fn cylinder_cylinder<V: Vector>(
@@ -213,8 +208,8 @@ pub mod check {
 
         // FIXME: Suboptimal + inaccurate implementation.
 
-        check_cylinder_hyperplane_with_sphere(*cy1_line, &v_near_cy2, cy2_radius)
-            .and_then(|_| check_cylinder_hyperplane_with_sphere(*cy2_line, &v_near_cy1, cy1_radius))
+        check_cylinder_hyperplane_with_sphere(cy1_line, &v_near_cy2, cy2_radius)
+            .and_then(|_| check_cylinder_hyperplane_with_sphere(cy2_line, &v_near_cy1, cy1_radius))
             .is_ok()
     }
 
@@ -251,7 +246,7 @@ pub mod check {
                 // NOTE: putting dist_sqr as-is just okay; we're just trying to find the
                 // cylinder hyperplane that is closest to the `near_pos`.
                 match check_cylinder_hyperplane_with_sphere(
-                    *cy_line,
+                    cy_line,
                     &near_pos,
                     dist_larger_than_radius,
                 ) {
@@ -265,6 +260,8 @@ pub mod check {
                                 *x = x.neg()
                             }
                         });
+
+                        // AABB 평면과 실린더 평면의 교선을 계산해야 한다.
 
                         // FIXME: Accurate calculation requires cross product to find
                         // intersection segment (-1 dims) between two planes
