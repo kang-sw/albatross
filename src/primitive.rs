@@ -130,6 +130,10 @@ pub trait VectorExt: Vector {
         v
     }
 
+    fn neg(&self) -> Self {
+        Self::from_fn(|i| self[i].neg())
+    }
+
     fn minimum() -> Self {
         Self::from_fn(|_| Self::Num::MINIMUM)
     }
@@ -203,6 +207,14 @@ pub trait VectorExt: Vector {
     /// Only meaningful when `self` is normal
     fn proj(&self, other: &Self) -> Self {
         self.amp(self.dot(other))
+    }
+
+    fn sum(&self) -> Self::Num {
+        let mut sum = Self::Num::ZERO;
+        for i in 0..Self::D {
+            sum = sum + self[i];
+        }
+        sum
     }
 
     fn distance(&self, other: &Self) -> Self::Num {
@@ -675,6 +687,10 @@ impl<V: Vector> LineSegment<V> {
         }
     }
 
+    pub fn invert(&mut self) {
+        self.u_d = self.u_d.neg();
+    }
+
     /// # Safety
     ///
     /// This function is marked as unsafe because it does not perform any checks
@@ -828,6 +844,12 @@ impl<V: Vector> Hyperplane<V> {
         let p_plane = self.calc_p();
         let v = pos.sub(&p_plane);
         pos.sub(&self.n.proj(&v))
+    }
+
+    pub fn signed_distance_sqr(&self, pos: &V) -> V::Num {
+        let p_plane = self.calc_p();
+        let v = pos.sub(&p_plane);
+        v.dot(&self.n)
     }
 
     /// Line:

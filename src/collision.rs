@@ -1,25 +1,21 @@
 pub mod check {
     use crate::{
         collision::distance,
-        primitive::{AabbRect, LineSegment, NumExt, Number, Vector, VectorExt},
+        primitive::{AabbRect, Hyperplane, LineSegment, NumExt, Number, Vector, VectorExt},
     };
 
-    #[inline]
     pub fn sphere_sphere<V: Vector>(c_1: &V, r_1: V::Num, c_2: &V, r_2: V::Num) -> bool {
         c_1.distance_sqr(c_2) <= (r_1 + r_2).sqr()
     }
 
-    #[inline]
     pub fn aabb_sphere<V: Vector>(rect: &AabbRect<V>, c: &V, r: V::Num) -> bool {
         rect.intersects_sphere(c, r)
     }
 
-    #[inline]
     pub fn aabb_aabb<V: Vector>(rect_1: &AabbRect<V>, rect_2: &AabbRect<V>) -> bool {
         rect_1.intersects(rect_2)
     }
 
-    #[inline]
     pub fn capsule_sphere<V: Vector>(
         capsule_line: &LineSegment<V>,
         capsule_r: V::Num,
@@ -35,6 +31,21 @@ pub mod check {
         center: &V,
         extent: &V,
     ) -> bool {
+        match check_capsule_aabb_conservative(capsule_line, capsule_r, center, extent) {
+            Ok(early_return) => early_return,
+            Err(aabb) => distance::visit_line_aabb_sqr(capsule_line, &aabb, |_, dist_sqr| {
+                (dist_sqr <= capsule_r.sqr()).then_some(())
+            })
+            .is_some(),
+        }
+    }
+
+    fn check_capsule_aabb_conservative<V: Vector>(
+        capsule_line: &LineSegment<V>,
+        capsule_r: V::Num,
+        center: &V,
+        extent: &V,
+    ) -> Result<bool, AabbRect<V>> {
         debug_assert!(extent.min_component() >= V::Num::ZERO);
 
         //
@@ -49,56 +60,59 @@ pub mod check {
         // extent using sqrt, therefore we what we need here is
         //
         //      D^2 > R_aabb^2 + R_capsule^2 + Expr
-        //        where Expr <= 2*R_aabb*R_capsule
-        //
-        // Here we simply replace R_aabb as the longest extent of the of
-        // AABB(l), which is guaranteed to be shorter than the actual
-        // radius, but still gives reasonable approximation and satisfies
-        // the above condition:
-        //
-        //      Expr = 2*l*R_capsule <= 2*R_aabb*R_capsule
+        //        where Expr >= 2*R_aabb*R_capsule, to prevent false negative.
         //
         let two = <V::Num as Number>::from_int(2);
         let half_ext = extent.amp(two.inv());
 
         {
             let r_aabb_sqr = half_ext.norm_sqr();
-            let l = half_ext.max_component();
+
+            // The maximum component `l` is always shorter than actual AABB radius,
+            // however, the radius never gets longer than `l*sqrt(2)` of longest
+            // component.
+            //
+            // This heuristic becomes most effective when the rectangle becomes
+            // hyper-cubic, as the radius likely to be same with the longest components'
+            // sqrt(2) multiplicand.
+            let sqrt_2 = V::Num::from_f64(1.41421356238);
+            let l = half_ext.max_component() * sqrt_2;
 
             // This is more tolerant approximation of the actual squared
             // distance. In case of AABB, it's not necessary to be precise
             // in this step as we're going to double-check it later.
-            let approx_dist_sqr = r_aabb_sqr + capsule_r.sqr() + l * capsule_r * two;
+            let expr = two * l * capsule_r;
 
-            if approx_dist_sqr < capsule_line.dist_point_sqr(center) {
+            let approx_thres_sqr = r_aabb_sqr + capsule_r.sqr() + expr;
+            let distance_sqr = capsule_line.dist_point_sqr(center);
+
+            // D^2 > R_aabb^2 + R_capsule^2 + expr
+            if distance_sqr > approx_thres_sqr {
                 // Bounding sphere disjoints; early return. This false return always
                 // valid; i.e. There's no false negative.
-                return false;
+                return Ok(false);
             }
         };
 
         let v_min = center.sub(&half_ext);
         let v_max = center.add(&half_ext);
         let line = capsule_line;
+        let aabb = unsafe { AabbRect::new_unchecked(v_min, v_max) };
 
         // SAFETY: min, max is valid
-        if unsafe { AabbRect::new_unchecked(v_min, v_max) }.contains(&line.p_start) {
+        if aabb.contains(&line.p_start) {
             // Since the logic below only catches hyperplane contacts, the full inclusion
             // can't be handled only with following algorithm. Therefore, here we firstly
             // check if both points are within the boundary.
             //
             // If any of the point is inside the box, it can safely be treated as hit.
-            return true;
+            return Ok(true);
         }
 
-        let aabb = unsafe { AabbRect::new_unchecked(v_min, v_max) };
-        distance::visit_line_aabb_sqr(line, &aabb, |dist_sqr| {
-            (dist_sqr <= capsule_r.sqr()).then_some(())
-        })
-        .is_some()
+        // Can't determine the result; need to check further.
+        Err(aabb)
     }
 
-    #[inline]
     pub fn capsule_capsule<V: Vector>(
         c1_line: &LineSegment<V>,
         c1_r: V::Num,
@@ -108,6 +122,71 @@ pub mod check {
         let [near_1, near_2] = c1_line.nearest_pair(c2_line);
         near_1.distance_sqr(&near_2) <= (c1_r + c2_r).sqr()
     }
+
+    pub fn cylinder_sphere<V: Vector>(
+        cy_line: &LineSegment<V>,
+        cy_radius: V::Num,
+        sph_center: &V,
+        sph_radius: V::Num,
+    ) -> bool {
+        let dist_sqr = cy_line.dist_point_sqr(sph_center);
+
+        if (cy_radius + sph_radius).sqr() > dist_sqr {
+            // Farer than maximum allowed distance
+            return false;
+        }
+
+        check_cylinder_hyperplane_sphere(*cy_line, sph_center, sph_radius)
+    }
+
+    fn check_cylinder_hyperplane_sphere<V: Vector>(
+        mut cy_line: LineSegment<V>,
+        sph_center: &V,
+        sph_radius: V::Num,
+    ) -> bool {
+        // Check two hyperplanes of the cylinder; whether they are intersected with the
+        // hyperplane(Below the plane; where both signed distance are negative => then
+        // it's inside). If any of the signed distance is larger than threshold; it does
+        // not intersect with the cylinder.
+
+        // hp bottom,
+        let hp1 = Hyperplane::from_line(&cy_line);
+
+        cy_line.p_start = cy_line.calc_p_end();
+        let hp2 = Hyperplane::from_line(&cy_line);
+
+        // Distance 1 is negated since its normal is heading to inside of the cylinder.
+        let s_dist_sqr_1 = hp1.signed_distance_sqr(sph_center).neg();
+        let s_dist_sqr_2 = hp2.signed_distance_sqr(sph_center);
+
+        // Check if the sphere hits the cylinder cap-sule plane actually.
+        s_dist_sqr_1 <= sph_radius.sqr() && s_dist_sqr_2 <= sph_radius.sqr()
+    }
+
+    pub fn cylinder_capsule<V: Vector>(
+        cy_line: &LineSegment<V>,
+        cy_radius: V::Num,
+        cap_line: &LineSegment<V>,
+        cap_radius: V::Num,
+    ) -> bool {
+        // Check capsule first
+        let [v_near_cy, v_near_cap] = cy_line.nearest_pair(cap_line);
+
+        if v_near_cy.distance_sqr(&v_near_cap) > (cy_radius + cap_radius).sqr() {
+            return false;
+        }
+
+        // Then check cylinder
+        check_cylinder_hyperplane_sphere(*cy_line, &v_near_cap, cap_radius)
+    }
+
+    pub fn cylinder_aabb<V: Vector>(
+        mut cy_line: LineSegment<V>,
+        cy_radius: V::Num,
+        aabb: &AabbRect<V>,
+    ) -> bool {
+        todo!()
+    }
 }
 
 pub mod distance {
@@ -115,21 +194,26 @@ pub mod distance {
         AabbRect, Hyperplane, LineSegment, NumExt as _, Number, Vector, VectorExt as _,
     };
 
-    pub fn line_aabb_sqr<V: Vector>(line: &LineSegment<V>, aabb: &AabbRect<V>) -> V::Num {
+    pub fn line_aabb_sqr<V: Vector>(line: &LineSegment<V>, aabb: &AabbRect<V>) -> (V, V::Num) {
         let mut min_dist_sqr = V::Num::MAXIMUM;
+        let mut nearest_point = V::zero();
 
-        visit_line_aabb_sqr(line, aabb, |dist_sqr| {
-            min_dist_sqr = min_dist_sqr.min_value(dist_sqr);
+        visit_line_aabb_sqr(line, aabb, |point, dist_sqr| {
+            if dist_sqr < min_dist_sqr {
+                min_dist_sqr = dist_sqr;
+                nearest_point = point;
+            }
+
             None::<()>
         });
 
-        min_dist_sqr
+        (nearest_point, min_dist_sqr)
     }
 
     pub fn visit_line_aabb_sqr<V: Vector, R>(
         line: &LineSegment<V>,
         aabb: &AabbRect<V>,
-        mut visit_with_plane_dist_sqr: impl FnMut(V::Num) -> Option<R>,
+        mut visit_with_plane_dist_sqr: impl FnMut(V, V::Num) -> Option<R>,
     ) -> Option<R> {
         // 1. Each hyperplane is defined by a minimum point and a maximum
         //    point, denoted as P, and the axis direction as n. Therefore, in
@@ -193,7 +277,7 @@ pub mod distance {
                 let dist_sqr = line.dist_point_sqr(&v_c);
 
                 // Implements early return. Condition may optimize away when inlined.
-                if let Some(x) = visit_with_plane_dist_sqr(dist_sqr) {
+                if let Some(x) = visit_with_plane_dist_sqr(v_c, dist_sqr) {
                     return Some(x);
                 }
             }
