@@ -18,14 +18,14 @@ impl<T: Context> Tree<T> {
                 let region = AabbRect::from_extent(*p_pivot, *ext).extended_by_all(query_margin);
                 self.query_region(&region, visit_leaf);
             }
-            TraceShape::Sphere(rad) => {
-                assert!(rad.is_positive());
+            TraceShape::Sphere(radius) => {
+                assert!(!radius.is_negative());
 
-                let region = AabbRect::from_sphere(*p_pivot, *rad).extended_by_all(query_margin);
+                let region = AabbRect::from_sphere(*p_pivot, *radius).extended_by_all(query_margin);
                 self.query_region(&region, visit_leaf);
             }
             TraceShape::Capsule { dir, radius } => {
-                assert!(radius.is_positive());
+                assert!(!radius.is_negative());
 
                 let radius = *radius;
                 let cutter = create_line_region_cutter(
@@ -94,9 +94,9 @@ impl<T: Context> Tree<T> {
                     TraceShape::Aabb(ext) => {
                         collision::check::capsule_aabb_ce(&line, s_radius, &elem_pos, &ext)
                     }
-                    TraceShape::Capsule { dir, radius } => collision::check::cylinder_capsule(
+                    TraceShape::Capsule { dir, radius } => collision::check::capsule_capsule(
                         &LineSegment::from_capsule(elem_pos, dir),
-                        radius.neg(),
+                        radius,
                         &line,
                         s_radius,
                     ),
@@ -132,9 +132,9 @@ impl<T: Context> Tree<T> {
                         let aabb = AabbRect::from_extent(elem_pos, ext);
                         collision::check::aabb_sphere(&aabb, p_center, s_radius)
                     }
-                    TraceShape::Capsule { dir, radius } => collision::check::cylinder_sphere(
+                    TraceShape::Capsule { dir, radius } => collision::check::capsule_sphere(
                         &LineSegment::from_capsule(elem_pos, dir),
-                        radius.neg(),
+                        radius,
                         p_center,
                         s_radius,
                     ),
@@ -285,7 +285,7 @@ impl<T: Context> Tree<T> {
                             radius,
                             &q_center,
                             &q_extent,
-                        ) && collision::check::cylinder_capsule(
+                        ) && collision::check::capsule_capsule(
                             &capsule_line,
                             s_radius,
                             &LineSegment::from_capsule(elem_pos, dir),
