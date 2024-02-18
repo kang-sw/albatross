@@ -25,7 +25,7 @@ pub mod check {
         capsule_line.dist_point_sqr(c) < (capsule_r + r).sqr()
     }
 
-    pub fn capsule_center_extent<V: Vector>(
+    pub fn capsule_aabb_ce<V: Vector>(
         capsule_line: &LineSegment<V>,
         capsule_r: V::Num,
         center: &V,
@@ -136,18 +136,18 @@ pub mod check {
             return false;
         }
 
-        check_cylinder_hyperplane_sphere(*cy_line, sph_center, sph_radius)
+        check_cylinder_hyperplane_sphere(*cy_line, sph_center, sph_radius).is_ok()
     }
 
+    struct NoIntersection;
+
+    /// Returns the hyperplane if sphere is outside of any of the cylinder's hyperplane.
     fn check_cylinder_hyperplane_sphere<V: Vector>(
         mut cy_line: LineSegment<V>,
         sph_center: &V,
         sph_radius: V::Num,
-    ) -> bool {
-        // Check two hyperplanes of the cylinder; whether they are intersected with the
-        // hyperplane(Below the plane; where both signed distance are negative => then
-        // it's inside). If any of the signed distance is larger than threshold; it does
-        // not intersect with the cylinder.
+    ) -> Result<Option<Hyperplane<V>>, NoIntersection> {
+        // Check two hyperplanes of the cylinder, compare it with given radius.
 
         // hp bottom,
         let hp1 = Hyperplane::from_line(&cy_line);
@@ -159,8 +159,23 @@ pub mod check {
         let s_dist_sqr_1 = hp1.signed_distance_sqr(sph_center).neg();
         let s_dist_sqr_2 = hp2.signed_distance_sqr(sph_center);
 
-        // Check if the sphere hits the cylinder cap-sule plane actually.
-        s_dist_sqr_1 <= sph_radius.sqr() && s_dist_sqr_2 <= sph_radius.sqr()
+        // Check if the sphere hits the cylinder capsule plane actually.
+        let sphere_rad_sqr = sph_radius.sqr();
+
+        // Both distance are negative => it's just inside.
+        if s_dist_sqr_1 <= sphere_rad_sqr && s_dist_sqr_2 <= sphere_rad_sqr {
+            if s_dist_sqr_1.is_positive() {
+                // `hp1` normal is heading to inside of the cylinder.
+                Ok(Some(hp1.flipped()))
+            } else if s_dist_sqr_2.is_positive() {
+                Ok(Some(hp2))
+            } else {
+                // It's just between the hyperplanes.
+                Ok(None)
+            }
+        } else {
+            Err(NoIntersection)
+        }
     }
 
     pub fn cylinder_capsule<V: Vector>(
@@ -177,13 +192,34 @@ pub mod check {
         }
 
         // Then check cylinder
-        check_cylinder_hyperplane_sphere(*cy_line, &v_near_cap, cap_radius)
+        check_cylinder_hyperplane_sphere(*cy_line, &v_near_cap, cap_radius).is_ok()
     }
 
-    pub fn cylinder_aabb<V: Vector>(
-        mut cy_line: LineSegment<V>,
+    pub fn cylinder_cylinder<V: Vector>(
+        cy1_line: &LineSegment<V>,
+        cy1_radius: V::Num,
+        cy2_line: &LineSegment<V>,
+        cy2_radius: V::Num,
+    ) -> bool {
+        // Check capsule first
+        let [v_near_cy1, v_near_cy2] = cy1_line.nearest_pair(cy2_line);
+
+        if v_near_cy1.distance_sqr(&v_near_cy2) > (cy1_radius + cy2_radius).sqr() {
+            return false;
+        }
+
+        // FIXME: Suboptimal + inaccurate implementation.
+
+        check_cylinder_hyperplane_sphere(*cy1_line, &v_near_cy2, cy2_radius)
+            .and_then(|_| check_cylinder_hyperplane_sphere(*cy2_line, &v_near_cy1, cy1_radius))
+            .is_ok()
+    }
+
+    pub fn cylinder_aabb_ce<V: Vector>(
+        cy_line: &LineSegment<V>,
         cy_radius: V::Num,
-        aabb: &AabbRect<V>,
+        center: &V,
+        extent: &V,
     ) -> bool {
         todo!()
     }

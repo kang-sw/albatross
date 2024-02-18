@@ -114,6 +114,14 @@ pub trait NumExt: Number {
         self == Self::ZERO
     }
 
+    fn is_negative(self) -> bool {
+        self < Self::ZERO
+    }
+
+    fn is_positive(self) -> bool {
+        self > Self::ZERO
+    }
+
     fn inv(self) -> Self {
         Self::ONE / self
     }
@@ -792,6 +800,12 @@ impl<V: Vector> Default for DirectionSegment<V> {
     }
 }
 
+impl<V: Vector> From<V> for DirectionSegment<V> {
+    fn from(v: V) -> Self {
+        Self::new(v)
+    }
+}
+
 impl<V: Vector> DirectionSegment<V> {
     pub fn new(v_dir: V) -> Self {
         let s_norm = v_dir.norm();
@@ -850,6 +864,13 @@ impl<V: Vector> Hyperplane<V> {
         let p_plane = self.calc_p();
         let v = pos.sub(&p_plane);
         v.dot(&self.n)
+    }
+
+    pub fn flipped(self) -> Self {
+        Self {
+            d: self.d.neg(),
+            n: self.n.neg(),
+        }
     }
 
     /// Line:
