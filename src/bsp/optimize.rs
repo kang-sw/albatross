@@ -291,7 +291,6 @@ impl<T: Context> Tree<T> {
 
                     // Split the node, balanced as possible.
 
-                    // TODO: median? average? clustering?
                     // - 평균값 중심 계산
                     // - 표준편차 계산 => 가장 값이 큰 축 선택
                     // - 평균값에서 가장 먼(편차 큰) 엘리먼트에 가중치 부여해서 축 중심 재계산
@@ -595,9 +594,6 @@ pub(crate) fn recurse_phase_2_split<T: Context>(
                 //            ^^ Makes zero always return.
                 return;
             }
-
-            // TODO: Rewrite the whole algorithm =>
-            // - For Each axes,
 
             // FIXME: Remove this magic number!
             const SQUARE_SPLIT_CAP: f64 = 8.;

@@ -287,12 +287,6 @@ impl<T: Context> Tree<T> {
         })
     }
 
-    // TODO: `trace_line`
-
-    // TODO: `trace_line_thick`
-
-    // TODO: `trace_sphere`
-
     pub fn root(&self) -> T::NodeKey {
         self.root
     }
