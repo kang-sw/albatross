@@ -23,6 +23,8 @@ nalgebra = "0.32"
 fastrand = "2"
 web-time = "1"
 
+tap = "1"
+
 albatross = { path = "../.." }
 
 # native:

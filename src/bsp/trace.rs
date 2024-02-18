@@ -23,13 +23,14 @@ impl<T: Context> Tree<T> {
                 self.query_region(&region, visit_leaf);
             }
             TraceShape::CapsuleOrCylinder { dir, radius } => {
+                let radius = radius.abs();
                 let cutter = create_line_region_cutter(
                     *p_pivot,
                     p_pivot.add(&dir.calc_v_dir()),
-                    *radius + query_margin,
+                    radius + query_margin,
                 );
                 let region = AabbRect::new(*p_pivot, p_pivot.add(&dir.calc_v_dir()))
-                    .extended_by_all(*radius + query_margin);
+                    .extended_by_all(radius + query_margin);
                 self.query_region_with_cutter(&region, visit_leaf, cutter);
             }
         }

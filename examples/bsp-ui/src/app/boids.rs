@@ -5,8 +5,9 @@ use albatross::{
     bsp::{self, OptimizeParameter, TraceComponent, TraceShape, TreeElement},
     primitive::{AabbRect, VectorExt},
 };
-use egui::{Color32, Stroke};
+use egui::{epaint::PathShape, Color32, Stroke};
 use nalgebra::Vector2;
+use tap::Tap;
 use web_time::Instant;
 
 pub const BOID_SIZE: f32 = 0.2;
@@ -780,20 +781,32 @@ fn draw_trace_shape(
             let end = to_screen(origin.add(&dir.calc_v_dir()).into(), offset, zoom);
 
             let radius = radius * zoom;
-
-            p.circle(start.into(), radius, color_bg, stroke);
-            p.circle(end.into(), radius, color_bg, stroke);
-
-            let v_offset = dir.u_dir().amp(radius);
+            let v_offset = dir.u_dir().amp(radius.abs());
 
             let v_offset_1 = [v_offset[1], -v_offset[0]];
             let v_offset_2 = [-v_offset[1], v_offset[0]];
 
-            for offset in [v_offset_1, v_offset_2] {
-                let start = start.add(&offset);
-                let end = end.add(&offset);
+            if radius > 0. {
+                p.circle(start.into(), radius, color_bg, stroke);
+                p.circle(end.into(), radius, color_bg, stroke);
 
-                p.line_segment([start, end].map(Into::into), stroke);
+                for offset in [v_offset_1, v_offset_2] {
+                    let start = start.add(&offset);
+                    let end = end.add(&offset);
+
+                    p.line_segment([start, end].map(Into::into), stroke);
+                }
+            } else {
+                let p1 = start.add(&v_offset_1);
+                let p2 = start.add(&v_offset_2);
+                let p3 = end.add(&v_offset_2);
+                let p4 = end.add(&v_offset_1);
+
+                let poses = [p1, p2, p3, p4].map(egui::Pos2::from);
+
+                p.add(egui::Shape::Path(
+                    PathShape::closed_line(poses.into(), stroke).tap_mut(|x| x.fill = color_bg),
+                ));
             }
         }
     }

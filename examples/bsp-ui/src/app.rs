@@ -226,7 +226,7 @@ impl eframe::App for TemplateApp {
                     if let CollisionTestMode::Capsule(ref mut rad) = self.collision_test {
                         ui.columns(2, |c| {
                             c[0].label("Capsule Radius");
-                            c[1].add(egui::DragValue::new(rad).speed(0.01).clamp_range(0.0..=1e3));
+                            c[1].add(egui::DragValue::new(rad).speed(0.01));
                         })
                     }
 
