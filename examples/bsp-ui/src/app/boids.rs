@@ -463,7 +463,7 @@ impl Model {
             match &mut shape {
                 TraceShape::Aabb(x) => *x = x.amp(1. / zoom),
                 TraceShape::Sphere(rad) => *rad /= zoom,
-                TraceShape::Capsule { dir, .. } => {
+                TraceShape::CapsuleOrCylinder { dir, .. } => {
                     dir.s_len /= zoom;
                 }
             }
@@ -770,7 +770,7 @@ fn draw_trace_shape(
 
             p.circle(center.into(), rad, color_bg, stroke);
         }
-        TraceShape::Capsule { dir, radius } => {
+        TraceShape::CapsuleOrCylinder { dir, radius } => {
             // 1. Draw two circles connects start-end point
             // 2. Draw a line between two circles
             //    - This is a line connects two circles' center, and offset by

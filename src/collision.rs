@@ -1,7 +1,9 @@
 pub mod check {
+    use tap::Tap;
+
     use crate::{
         collision::distance,
-        primitive::{AabbRect, Hyperplane, LineSegment, NumExt, Number, Vector, VectorExt},
+        primitive::{AabbRect, LineSegment, NumExt, Number, PositionalPlane, Vector, VectorExt},
     };
 
     pub fn sphere_sphere<V: Vector>(c_1: &V, r_1: V::Num, c_2: &V, r_2: V::Num) -> bool {
@@ -33,7 +35,8 @@ pub mod check {
     ) -> bool {
         match check_capsule_aabb_conservative(capsule_line, capsule_r, center, extent) {
             Ok(early_return) => early_return,
-            Err(aabb) => distance::visit_line_aabb_sqr(capsule_line, &aabb, |_, dist_sqr| {
+            Err(aabb) => distance::visit_line_aabb_sqr(capsule_line, &aabb, |point, _| {
+                let dist_sqr = capsule_line.dist_point_sqr(&point);
                 (dist_sqr <= capsule_r.sqr()).then_some(())
             })
             .is_some(),
@@ -136,24 +139,24 @@ pub mod check {
             return false;
         }
 
-        check_cylinder_hyperplane_sphere(*cy_line, sph_center, sph_radius).is_ok()
+        check_cylinder_hyperplane_with_sphere(*cy_line, sph_center, sph_radius).is_ok()
     }
 
     struct NoIntersection;
 
     /// Returns the hyperplane if sphere is outside of any of the cylinder's hyperplane.
-    fn check_cylinder_hyperplane_sphere<V: Vector>(
+    fn check_cylinder_hyperplane_with_sphere<V: Vector>(
         mut cy_line: LineSegment<V>,
         sph_center: &V,
         sph_radius: V::Num,
-    ) -> Result<Option<Hyperplane<V>>, NoIntersection> {
+    ) -> Result<Option<PositionalPlane<V>>, NoIntersection> {
         // Check two hyperplanes of the cylinder, compare it with given radius.
 
         // hp bottom,
-        let hp1 = Hyperplane::from_line(&cy_line);
+        let hp1 = PositionalPlane::from_line(&cy_line);
 
         cy_line.p_start = cy_line.calc_p_end();
-        let hp2 = Hyperplane::from_line(&cy_line);
+        let hp2 = PositionalPlane::from_line(&cy_line);
 
         // Distance 1 is negated since its normal is heading to inside of the cylinder.
         let s_dist_sqr_1 = hp1.signed_distance_sqr(sph_center).neg();
@@ -192,7 +195,7 @@ pub mod check {
         }
 
         // Then check cylinder
-        check_cylinder_hyperplane_sphere(*cy_line, &v_near_cap, cap_radius).is_ok()
+        check_cylinder_hyperplane_with_sphere(*cy_line, &v_near_cap, cap_radius).is_ok()
     }
 
     pub fn cylinder_cylinder<V: Vector>(
@@ -210,8 +213,8 @@ pub mod check {
 
         // FIXME: Suboptimal + inaccurate implementation.
 
-        check_cylinder_hyperplane_sphere(*cy1_line, &v_near_cy2, cy2_radius)
-            .and_then(|_| check_cylinder_hyperplane_sphere(*cy2_line, &v_near_cy1, cy1_radius))
+        check_cylinder_hyperplane_with_sphere(*cy1_line, &v_near_cy2, cy2_radius)
+            .and_then(|_| check_cylinder_hyperplane_with_sphere(*cy2_line, &v_near_cy1, cy1_radius))
             .is_ok()
     }
 
@@ -221,35 +224,106 @@ pub mod check {
         center: &V,
         extent: &V,
     ) -> bool {
-        todo!()
+        match check_capsule_aabb_conservative(cy_line, cy_radius, center, extent) {
+            Ok(early) => early,
+            Err(aabb) => {
+                let (near_pos, near_index, dist_sqr) = distance::line_aabb_nearest(cy_line, &aabb);
+
+                if dist_sqr > cy_radius.sqr() {
+                    return false;
+                }
+
+                if dist_sqr.is_zero() {
+                    return true;
+                }
+
+                // Now we've verified capsule, we need to check if cylinder actually hits
+                // the AABB. The actual distance between cylinder plane and AABB is
+                // changed by the angle between two planes;
+
+                let dist_larger_than_radius = if dist_sqr < Number::ONE {
+                    // This guarantees that `dist_sqr` is always larger than sqrt distance.
+                    Number::ONE
+                } else {
+                    dist_sqr
+                };
+
+                // NOTE: putting dist_sqr as-is just okay; we're just trying to find the
+                // cylinder hyperplane that is closest to the `near_pos`.
+                match check_cylinder_hyperplane_with_sphere(
+                    *cy_line,
+                    &near_pos,
+                    dist_larger_than_radius,
+                ) {
+                    // This is the case that the cylinder just passes through the AABB,
+                    // where hyperplanes just don't matter.
+                    Ok(None) => true,
+
+                    Ok(Some(cy_plane)) => {
+                        let u_aabb_normal = V::unit(near_index.1).tap_mut(|x| {
+                            if !near_index.0 {
+                                *x = x.neg()
+                            }
+                        });
+
+                        // FIXME: Accurate calculation requires cross product to find
+                        // intersection segment (-1 dims) between two planes
+                        // - Currently, we use simpler heuristic which allows false
+                        //   positive that the cylinder tilt outside of AABB Boundary.
+                        //
+                        // To achive this, we need abs(sin(theta)) between two planes.
+                        // Following logic derives it from equation sqrt(1-cos^2(theta))
+                        let cos_theta = cy_plane.n().dot(&u_aabb_normal);
+                        let sin_theta = (V::Num::ONE - cos_theta.sqr()).sqrt();
+
+                        let eval_distance = cy_radius * sin_theta;
+                        eval_distance.sqr() <= dist_sqr
+
+                        // XXX: Future Fix
+                        // - Calculate line that is made by two planes
+                        // - Check if line is upon the AABB
+                        // - Check line distance between cy_plane's center.
+                    }
+                    Err(_) => {
+                        // The nearest point is never placed inside the cylinder.
+                        false
+                    }
+                }
+            }
+        }
     }
 }
 
 pub mod distance {
     use crate::primitive::{
-        AabbRect, Hyperplane, LineSegment, NumExt as _, Number, Vector, VectorExt as _,
+        AabbRect, AxisIndex, Hyperplane, LineSegment, NumExt as _, Number, Vector, VectorExt as _,
     };
 
-    pub fn line_aabb_sqr<V: Vector>(line: &LineSegment<V>, aabb: &AabbRect<V>) -> (V, V::Num) {
+    pub fn line_aabb_nearest<V: Vector>(
+        line: &LineSegment<V>,
+        aabb: &AabbRect<V>,
+    ) -> (V, (bool, AxisIndex), V::Num) {
         let mut min_dist_sqr = V::Num::MAXIMUM;
-        let mut nearest_point = V::zero();
+        let mut info = (V::zero(), Default::default());
 
-        visit_line_aabb_sqr(line, aabb, |point, dist_sqr| {
+        visit_line_aabb_sqr(line, aabb, |point, sign_index| {
+            let dist_sqr = line.dist_point_sqr(&point);
+
             if dist_sqr < min_dist_sqr {
                 min_dist_sqr = dist_sqr;
-                nearest_point = point;
+                info = (point, sign_index);
             }
 
             None::<()>
         });
 
-        (nearest_point, min_dist_sqr)
+        (info.0, info.1, min_dist_sqr)
     }
 
     pub fn visit_line_aabb_sqr<V: Vector, R>(
         line: &LineSegment<V>,
         aabb: &AabbRect<V>,
-        mut visit_with_plane_dist_sqr: impl FnMut(V, V::Num) -> Option<R>,
+        mut visit_with_plane_dist_sqr: impl FnMut(V, (bool, AxisIndex)) -> Option<R>,
     ) -> Option<R> {
         // 1. Each hyperplane is defined by a minimum point and a maximum
         //    point, denoted as P, and the axis direction as n. Therefore, in
@@ -282,7 +356,7 @@ pub mod distance {
         let v_max = aabb.max();
         let line_p_end = line.calc_p_end();
 
-        for v_plane_p in [v_min, v_max] {
+        for (sign, v_plane_p) in [(false, v_min), (true, v_max)] {
             for i in 0..V::D {
                 // SAFETY: V::unit(i) is always valid normal vector.
                 let plane = unsafe { Hyperplane::new_unchecked(V::unit(i), v_plane_p[i]) };
@@ -309,11 +383,8 @@ pub mod distance {
                     }
                 }
 
-                // Calculate distance between the line and the collision
-                let dist_sqr = line.dist_point_sqr(&v_c);
-
                 // Implements early return. Condition may optimize away when inlined.
-                if let Some(x) = visit_with_plane_dist_sqr(v_c, dist_sqr) {
+                if let Some(x) = visit_with_plane_dist_sqr(v_c, (sign, i)) {
                     return Some(x);
                 }
             }

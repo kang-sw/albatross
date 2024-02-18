@@ -830,45 +830,48 @@ impl<V: Vector> DirectionSegment<V> {
     }
 }
 
-/* -------------------------------------------- Plane ------------------------------------------- */
+/* -------------------------------------- Plane: Positional ------------------------------------- */
 
-/// Represent a plane with normal and distance from center.
-#[derive(Debug, Clone, Copy)]
-pub struct Hyperplane<V: Vector> {
-    pub d: V::Num,
+/// Represent a plane, centered with given position.
+pub struct PositionalPlane<V: Vector> {
+    pub p: V,
     n: V,
 }
 
-impl<V: Vector> Hyperplane<V> {
+impl<V: Vector> PositionalPlane<V> {
     /// # Safety
     ///
     /// `n` is valid normal.
-    pub unsafe fn new_unchecked(n: V, d: V::Num) -> Self {
-        debug_assert!((n.norm_sqr() - V::Num::ONE).abs() < Number::from_f64(1e-4));
-
-        Self { d, n }
+    pub unsafe fn new_unchecked(p: V, n: V) -> Self {
+        Self { p, n }
     }
 
     pub fn from_line(l: &LineSegment<V>) -> Self {
-        let d = l.u_d.dot(&l.p_start);
-        Self { d, n: l.u_d }
+        let p = l.p_start;
+        let n = l.u_d;
+        Self { p, n }
+    }
+
+    pub fn to_hyperplane(&self) -> Hyperplane<V> {
+        Hyperplane {
+            d: self.n.dot(&self.p),
+            n: self.n,
+        }
     }
 
     pub fn project_pos(&self, pos: &V) -> V {
-        let p_plane = self.calc_p();
-        let v = pos.sub(&p_plane);
+        let v = pos.sub(&self.p);
         pos.sub(&self.n.proj(&v))
     }
 
     pub fn signed_distance_sqr(&self, pos: &V) -> V::Num {
-        let p_plane = self.calc_p();
-        let v = pos.sub(&p_plane);
+        let v = pos.sub(&self.p);
         v.dot(&self.n)
     }
 
     pub fn flipped(self) -> Self {
         Self {
-            d: self.d.neg(),
+            p: self.p,
             n: self.n.neg(),
         }
     }
@@ -901,13 +904,83 @@ impl<V: Vector> Hyperplane<V> {
             return None;
         }
 
-        let v_l_p = self.calc_p().sub(&line.p_start);
+        let v_l_p = self.p.sub(&line.p_start);
         let t_0 = self.n.dot(&v_l_p) / dot_p_l;
 
         Some(line.p_start.add(&line.u_d.amp(t_0)))
     }
 
+    pub fn n(&self) -> &V {
+        &self.n
+    }
+}
+
+impl<T: Vector> From<Hyperplane<T>> for PositionalPlane<T> {
+    fn from(h: Hyperplane<T>) -> Self {
+        let p = h.calc_p();
+        let n = h.n;
+        Self { p, n }
+    }
+}
+
+/* -------------------------------------- Plane: Hyperplane ------------------------------------- */
+
+/// Represent a plane with normal and distance from center.
+#[derive(Debug, Clone, Copy)]
+pub struct Hyperplane<V: Vector> {
+    pub d: V::Num,
+    n: V,
+}
+
+impl<V: Vector> Hyperplane<V> {
+    /// # Safety
+    ///
+    /// `n` is valid normal.
+    pub unsafe fn new_unchecked(n: V, d: V::Num) -> Self {
+        debug_assert!((n.norm_sqr() - V::Num::ONE).abs() < Number::from_f64(1e-4));
+
+        Self { d, n }
+    }
+
+    pub fn from_line(l: &LineSegment<V>) -> Self {
+        let d = l.u_d.dot(&l.p_start);
+        Self { d, n: l.u_d }
+    }
+
+    pub fn to_positional(&self) -> PositionalPlane<V> {
+        PositionalPlane::from(*self)
+    }
+
+    pub fn project_pos(&self, pos: &V) -> V {
+        self.to_positional().project_pos(pos)
+    }
+
+    pub fn signed_distance_sqr(&self, pos: &V) -> V::Num {
+        self.to_positional().signed_distance_sqr(pos)
+    }
+
+    pub fn flipped(self) -> Self {
+        Self {
+            d: self.d.neg(),
+            n: self.n.neg(),
+        }
+    }
+
+    pub fn contact_point(&self, line: &LineSegment<V>) -> Option<V> {
+        self.to_positional().contact_point(line)
+    }
+
     pub fn calc_p(&self) -> V {
         self.n.amp(self.d)
+    }
+
+    pub fn n(&self) -> &V {
+        &self.n
+    }
+}
+
+impl<T: Vector> From<PositionalPlane<T>> for Hyperplane<T> {
+    fn from(p: PositionalPlane<T>) -> Self {
+        p.to_hyperplane()
     }
 }

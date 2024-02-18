@@ -145,7 +145,7 @@ impl eframe::App for TemplateApp {
 
                         (
                             self.drag_start_pos.into(),
-                            TraceShape::Capsule { dir, radius },
+                            TraceShape::CapsuleOrCylinder { dir, radius },
                         )
                     }
                 };
@@ -310,10 +310,13 @@ impl eframe::App for TemplateApp {
                             {
                                 Some(TraceShape::Sphere(BOID_SIZE))
                             } else if c[2]
-                                .radio(matches!(ext, TraceShape::Capsule { .. }), "Capsule")
+                                .radio(
+                                    matches!(ext, TraceShape::CapsuleOrCylinder { .. }),
+                                    "Capsule",
+                                )
                                 .clicked()
                             {
-                                Some(TraceShape::Capsule {
+                                Some(TraceShape::CapsuleOrCylinder {
                                     dir: DirectionSegment::new([0., BOID_SIZE * 2.]),
                                     radius: BOID_SIZE,
                                 })
@@ -354,7 +357,7 @@ impl eframe::App for TemplateApp {
                                     *self.model.extent_mut() = TraceShape::Sphere(rad);
                                 }
                             }
-                            TraceShape::Capsule { dir, mut radius } => {
+                            TraceShape::CapsuleOrCylinder { dir, mut radius } => {
                                 let mut changed = false;
                                 let [mut x, mut y] = dir.calc_v_dir();
 
@@ -375,7 +378,7 @@ impl eframe::App for TemplateApp {
                                 });
 
                                 if changed {
-                                    *self.model.extent_mut() = TraceShape::Capsule {
+                                    *self.model.extent_mut() = TraceShape::CapsuleOrCylinder {
                                         dir: DirectionSegment::new([x, y]),
                                         radius,
                                     };
