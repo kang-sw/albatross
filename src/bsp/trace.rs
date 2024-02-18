@@ -243,7 +243,7 @@ impl<T: Context> Tree<T> {
         // round shapes.
 
         let u_dir = T::Vector::unit(axis);
-        let q_center = p_bottom_center.add(&u_dir.amp(s_length / Number::from_int(2)));
+        let q_center = p_bottom_center.add(&u_dir.amp(s_length).div(Number::from_int(2)));
         let q_extent = T::Vector::from_fn(|i| {
             if i == axis {
                 s_length
@@ -311,7 +311,7 @@ pub fn create_line_region_cutter<V: Vector>(
 ) -> impl Fn(&AabbRect<V>, AxisIndex, V::Num) -> [AabbRect<V>; 2] {
     let v_dir = end.sub(&start);
     let dir_norm = v_dir.norm();
-    let u_dir = v_dir.amp(dir_norm.inv());
+    let u_dir = v_dir.div(dir_norm);
 
     // Cache thetas for each axis
     let v_mergins = V::from_fn(|i| {

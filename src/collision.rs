@@ -66,7 +66,7 @@ pub mod check {
         //        where Expr >= 2*R_aabb*R_capsule, to prevent false negative.
         //
         let two = <V::Num as Number>::from_int(2);
-        let half_ext = extent.amp(two.inv());
+        let half_ext = extent.div(two);
 
         {
             let r_aabb_sqr = half_ext.norm_sqr();

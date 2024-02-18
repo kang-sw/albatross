@@ -204,6 +204,10 @@ pub trait VectorExt: Vector {
         Self::from_fn(|i| self[i] * value)
     }
 
+    fn div(&self, value: Self::Num) -> Self {
+        Self::from_fn(|i| self[i] / value)
+    }
+
     fn norm(&self) -> Self::Num {
         self.norm_sqr().sqrt()
     }
@@ -433,7 +437,7 @@ impl<V: Vector> AabbRect<V> {
     }
 
     pub fn from_extent(center: V, extent: V) -> Self {
-        Self::from_half_extent(center, extent.amp(V::Num::from_int(2)))
+        Self::from_half_extent(center, extent.div(V::Num::from_int(2)))
     }
 
     pub fn from_half_extent(center: V, half_extent: V) -> Self {
@@ -672,7 +676,7 @@ impl<V: Vector> LineSegment<V> {
         let u_d = if s_norm.is_zero() {
             V::unit(0) // It's just dummy normal
         } else {
-            u_d.amp(s_norm.inv())
+            u_d.div(s_norm)
         };
 
         Self {
@@ -692,7 +696,7 @@ impl<V: Vector> LineSegment<V> {
 
     pub fn from_capsule_centered(p_start: V, capsule: DirectionSegment<V>) -> Self {
         Self {
-            p_start: p_start.sub(&capsule.u_dir.amp(capsule.s_len / V::Num::from_int(2))),
+            p_start: p_start.sub(&capsule.u_dir.amp(capsule.s_len).div(V::Num::from_int(2))),
             s_norm: capsule.s_len,
             u_d: capsule.u_dir,
         }
@@ -765,7 +769,7 @@ impl<V: Vector> LineSegment<V> {
     pub fn set_end(&mut self, p_end: V) {
         self.u_d = p_end.sub(&self.p_start);
         self.s_norm = self.u_d.norm();
-        self.u_d = self.u_d.amp(self.s_norm.inv());
+        self.u_d = self.u_d.div(self.s_norm);
     }
 
     pub fn calc_p_end(&self) -> V {
@@ -815,7 +819,7 @@ impl<V: Vector> DirectionSegment<V> {
         let u_dir = if s_norm.is_zero() {
             V::unit(0)
         } else {
-            v_dir.amp(s_norm.inv())
+            v_dir.div(s_norm)
         };
 
         Self {

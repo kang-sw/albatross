@@ -5,9 +5,8 @@ use albatross::{
     bsp::{self, OptimizeParameter, TraceComponent, TraceShape, TreeElement},
     primitive::{AabbRect, VectorExt},
 };
-use egui::{epaint::PathShape, Color32, Stroke};
+use egui::{Color32, Stroke};
 use nalgebra::Vector2;
-use tap::Tap;
 use web_time::Instant;
 
 pub const BOID_SIZE: f32 = 0.2;
