@@ -464,7 +464,7 @@ impl Model {
             match &mut shape {
                 TraceShape::Aabb(x) => *x = x.amp(1. / zoom),
                 TraceShape::Sphere(rad) => *rad /= zoom,
-                TraceShape::CapsuleOrCylinder { dir, .. } => {
+                TraceShape::Capsule { dir, .. } => {
                     dir.s_len /= zoom;
                 }
             }
@@ -491,8 +491,8 @@ impl Model {
                     break 'highlight_cursor;
                 };
 
-                let cursor_pos = to_world(cursor_pos, offset, zoom);
-                let mut all_rect = AabbRect::new_circular([0., 0.], self.area_radius);
+                let cursor_pos: [f32; 2] = to_world(cursor_pos, offset, zoom);
+                let mut all_rect = AabbRect::from_sphere([0., 0.], self.area_radius);
 
                 if !all_rect.contains(&cursor_pos) {
                     break 'highlight_cursor;
@@ -531,7 +531,7 @@ impl Model {
                 );
 
                 let mut leaf_bound = *self.bsp.leaf_bound(node);
-                leaf_bound.apply_intersection(&AabbRect::new_circular([0., 0.], self.area_radius));
+                leaf_bound.apply_intersection(&AabbRect::from_sphere([0., 0.], self.area_radius));
 
                 rects.pop();
 
@@ -634,7 +634,7 @@ impl Model {
 
             for leaf in hit_test_grids.iter().cloned() {
                 let mut bound = *self.bsp.leaf_bound(leaf);
-                bound.apply_intersection(&AabbRect::new_circular([0., 0.], self.area_radius));
+                bound.apply_intersection(&AabbRect::from_sphere([0., 0.], self.area_radius));
 
                 let min = to_screen((*bound.min()).into(), offset, zoom);
                 let max = to_screen((*bound.max()).into(), offset, zoom);
@@ -754,7 +754,7 @@ fn draw_trace_shape(
 
     match shape {
         TraceShape::Aabb(ext) => {
-            let aabb = AabbRect::new_extent(origin, ext);
+            let aabb = AabbRect::from_extent(origin, ext);
             let min = to_screen((*aabb.min()).into(), offset, zoom);
             let max = to_screen((*aabb.max()).into(), offset, zoom);
 
@@ -771,7 +771,7 @@ fn draw_trace_shape(
 
             p.circle(center.into(), rad, color_bg, stroke);
         }
-        TraceShape::CapsuleOrCylinder { dir, radius } => {
+        TraceShape::Capsule { dir, radius } => {
             // 1. Draw two circles connects start-end point
             // 2. Draw a line between two circles
             //    - This is a line connects two circles' center, and offset by
@@ -786,27 +786,14 @@ fn draw_trace_shape(
             let v_offset_1 = [v_offset[1], -v_offset[0]];
             let v_offset_2 = [-v_offset[1], v_offset[0]];
 
-            if radius > 0. {
-                p.circle(start.into(), radius, color_bg, stroke);
-                p.circle(end.into(), radius, color_bg, stroke);
+            p.circle(start.into(), radius, color_bg, stroke);
+            p.circle(end.into(), radius, color_bg, stroke);
 
-                for offset in [v_offset_1, v_offset_2] {
-                    let start = start.add(&offset);
-                    let end = end.add(&offset);
+            for offset in [v_offset_1, v_offset_2] {
+                let start = start.add(&offset);
+                let end = end.add(&offset);
 
-                    p.line_segment([start, end].map(Into::into), stroke);
-                }
-            } else {
-                let p1 = start.add(&v_offset_1);
-                let p2 = start.add(&v_offset_2);
-                let p3 = end.add(&v_offset_2);
-                let p4 = end.add(&v_offset_1);
-
-                let poses = [p1, p2, p3, p4].map(egui::Pos2::from);
-
-                p.add(egui::Shape::Path(
-                    PathShape::closed_line(poses.into(), stroke).tap_mut(|x| x.fill = color_bg),
-                ));
+                p.line_segment([start, end].map(Into::into), stroke);
             }
         }
     }

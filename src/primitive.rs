@@ -192,16 +192,16 @@ pub trait VectorExt: Vector {
         Self::from_fn(|i| self[i] + other[i])
     }
 
-    fn mul(&self, other: &Self) -> Self {
+    fn elem_mul(&self, other: &Self) -> Self {
         Self::from_fn(|i| self[i] * other[i])
+    }
+
+    fn elem_div(&self, other: &Self) -> Self {
+        Self::from_fn(|i| self[i] / other[i])
     }
 
     fn amp(&self, value: Self::Num) -> Self {
         Self::from_fn(|i| self[i] * value)
-    }
-
-    fn div(&self, other: &Self) -> Self {
-        Self::from_fn(|i| self[i] / other[i])
     }
 
     fn norm(&self) -> Self::Num {
@@ -404,7 +404,7 @@ impl<V: Vector> AabbRect<V> {
     /// # Returns
     ///
     /// A new `AabbRect` with the adjusted minimum and maximum vectors.
-    pub fn new(mut p1: V, mut p2: V) -> Self {
+    pub fn from_points(mut p1: V, mut p2: V) -> Self {
         for i in 0..V::D {
             let a = &mut p1[i];
             let b = &mut p2[i];
@@ -418,7 +418,7 @@ impl<V: Vector> AabbRect<V> {
     }
 
     /// Build new rectangle from circular components.
-    pub fn new_circular(center: V, radius: V::Num) -> Self {
+    pub fn from_sphere(center: V, radius: V::Num) -> Self {
         assert!(radius >= V::Num::ZERO);
 
         let mut min = center;
@@ -432,16 +432,19 @@ impl<V: Vector> AabbRect<V> {
         Self { min, max }
     }
 
-    pub fn new_extent(center: V, extent: V) -> Self {
+    pub fn from_extent(center: V, extent: V) -> Self {
+        Self::from_half_extent(center, extent.amp(V::Num::from_int(2)))
+    }
+
+    pub fn from_half_extent(center: V, half_extent: V) -> Self {
         let mut min = center;
         let mut max = center;
 
         for i in 0..V::D {
-            let half = extent[i] / V::Num::from_int(2);
-            assert!(half >= V::Num::ZERO);
+            assert!(half_extent[i] >= V::Num::ZERO);
 
-            min[i] = min[i] - half;
-            max[i] = max[i] + half;
+            min[i] = min[i] - half_extent[i];
+            max[i] = max[i] + half_extent[i];
         }
 
         Self { min, max }
@@ -863,6 +866,10 @@ impl<V: Vector> PositionalPlane<V> {
     pub fn project_pos(&self, pos: &V) -> V {
         let v = pos.sub(&self.p);
         pos.sub(&self.n.proj(&v))
+    }
+
+    pub fn project_dir(&self, dir_vec: &V) -> V {
+        dir_vec.sub(&self.n.proj(dir_vec))
     }
 
     pub fn signed_distance(&self, pos: &V) -> V::Num {

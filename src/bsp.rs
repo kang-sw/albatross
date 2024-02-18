@@ -130,14 +130,12 @@ pub enum TraceShape<V: Vector> {
     /// Value is radius for sphere.
     Sphere(V::Num),
 
-    /// Capsule or cylinder extent; Line and radius
-    CapsuleOrCylinder {
+    /// Capsule
+    Capsule {
         /// Capsule or cylinder direction.
         dir: DirectionSegment<V>,
 
-        /// Radius of the capsule or cylinder.
-        ///
-        /// If this value is negative, it is treated as cylinder.
+        /// Radius of the capsule
         radius: V::Num,
     },
 }

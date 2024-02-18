@@ -498,7 +498,7 @@ unsafe fn impl_node_collapse<'a, T: Context>(
 
     // It is guaranteed the original range is restored.
     let (leaf, leaf_body) = tree.get_leaf_node_mut(node).unwrap();
-    leaf_body.bound = AabbRect::new(bounds[0], bounds[1]);
+    leaf_body.bound = AabbRect::from_points(bounds[0], bounds[1]);
 
     (leaf, leaf_body)
 }

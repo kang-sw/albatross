@@ -130,7 +130,8 @@ impl eframe::App for TemplateApp {
                 let (center, trace) = match self.collision_test {
                     CollisionTestMode::Aabb => {
                         // Change AABB to center + extent expression
-                        let aabb = AabbRect::new(self.drag_start_pos.into(), cur_pos.into());
+                        let aabb =
+                            AabbRect::from_points(self.drag_start_pos.into(), cur_pos.into());
                         (aabb.center(), TraceShape::Aabb(aabb.extent()))
                     }
                     CollisionTestMode::Sphere => {
@@ -145,7 +146,7 @@ impl eframe::App for TemplateApp {
 
                         (
                             self.drag_start_pos.into(),
-                            TraceShape::CapsuleOrCylinder { dir, radius },
+                            TraceShape::Capsule { dir, radius },
                         )
                     }
                 };
@@ -226,7 +227,7 @@ impl eframe::App for TemplateApp {
                     if let CollisionTestMode::Capsule(ref mut rad) = self.collision_test {
                         ui.columns(2, |c| {
                             c[0].label("Capsule Radius");
-                            c[1].add(egui::DragValue::new(rad).speed(0.01));
+                            c[1].add(egui::DragValue::new(rad).speed(0.01).clamp_range(0.0..=1e3));
                         })
                     }
 
@@ -310,13 +311,10 @@ impl eframe::App for TemplateApp {
                             {
                                 Some(TraceShape::Sphere(BOID_SIZE))
                             } else if c[2]
-                                .radio(
-                                    matches!(ext, TraceShape::CapsuleOrCylinder { .. }),
-                                    "Capsule",
-                                )
+                                .radio(matches!(ext, TraceShape::Capsule { .. }), "Capsule")
                                 .clicked()
                             {
-                                Some(TraceShape::CapsuleOrCylinder {
+                                Some(TraceShape::Capsule {
                                     dir: DirectionSegment::new([0., BOID_SIZE * 2.]),
                                     radius: BOID_SIZE,
                                 })
@@ -349,7 +347,11 @@ impl eframe::App for TemplateApp {
                                 let changed = ui.columns(2, |cols| {
                                     cols[0].label("Radius");
                                     cols[1]
-                                        .add(egui::DragValue::new(&mut rad).speed(0.001))
+                                        .add(
+                                            egui::DragValue::new(&mut rad)
+                                                .speed(0.001)
+                                                .clamp_range(0.0..=1e3),
+                                        )
                                         .changed()
                                 });
 
@@ -357,7 +359,7 @@ impl eframe::App for TemplateApp {
                                     *self.model.extent_mut() = TraceShape::Sphere(rad);
                                 }
                             }
-                            TraceShape::CapsuleOrCylinder { dir, mut radius } => {
+                            TraceShape::Capsule { dir, mut radius } => {
                                 let mut changed = false;
                                 let [mut x, mut y] = dir.calc_v_dir();
 
@@ -373,12 +375,16 @@ impl eframe::App for TemplateApp {
                                 changed |= ui.columns(2, |cols| {
                                     cols[0].label("Radius");
                                     cols[1]
-                                        .add(egui::DragValue::new(&mut radius).speed(0.001))
+                                        .add(
+                                            egui::DragValue::new(&mut radius)
+                                                .speed(0.001)
+                                                .clamp_range(0.0..=1e3),
+                                        )
                                         .changed()
                                 });
 
                                 if changed {
-                                    *self.model.extent_mut() = TraceShape::CapsuleOrCylinder {
+                                    *self.model.extent_mut() = TraceShape::Capsule {
                                         dir: DirectionSegment::new([x, y]),
                                         radius,
                                     };

@@ -214,80 +214,13 @@ pub mod check {
     }
 
     pub fn cylinder_aabb_ce<V: Vector>(
-        cy_line: &LineSegment<V>,
-        cy_radius: V::Num,
-        center: &V,
-        extent: &V,
+        _cy_line: &LineSegment<V>,
+        _cy_radius: V::Num,
+        _center: &V,
+        _extent: &V,
     ) -> bool {
-        match check_capsule_aabb_conservative(cy_line, cy_radius, center, extent) {
-            Ok(early) => early,
-            Err(aabb) => {
-                let (near_pos, near_index, dist_sqr) = distance::line_aabb_nearest(cy_line, &aabb);
-
-                if dist_sqr > cy_radius.sqr() {
-                    return false;
-                }
-
-                if dist_sqr.is_zero() {
-                    return true;
-                }
-
-                // Now we've verified capsule, we need to check if cylinder actually hits
-                // the AABB. The actual distance between cylinder plane and AABB is
-                // changed by the angle between two planes;
-
-                let dist_larger_than_radius = if dist_sqr < Number::ONE {
-                    // This guarantees that `dist_sqr` is always larger than sqrt distance.
-                    Number::ONE
-                } else {
-                    dist_sqr
-                };
-
-                // NOTE: putting dist_sqr as-is just okay; we're just trying to find the
-                // cylinder hyperplane that is closest to the `near_pos`.
-                match check_cylinder_hyperplane_with_sphere(
-                    cy_line,
-                    &near_pos,
-                    dist_larger_than_radius,
-                ) {
-                    // This is the case that the cylinder just passes through the AABB,
-                    // where hyperplanes just don't matter.
-                    Ok(None) => true,
-
-                    Ok(Some(cy_plane)) => {
-                        let u_aabb_normal = V::unit(near_index.1).tap_mut(|x| {
-                            if !near_index.0 {
-                                *x = x.neg()
-                            }
-                        });
-
-                        // AABB 평면과 실린더 평면의 교선을 계산해야 한다.
-
-                        // FIXME: Accurate calculation requires cross product to find
-                        // intersection segment (-1 dims) between two planes
-                        // - Currently, we use simpler heuristic which allows false
-                        //   positive that the cylinder tilt outside of AABB Boundary.
-                        //
-                        // To achive this, we need abs(sin(theta)) between two planes.
-                        // Following logic derives it from equation sqrt(1-cos^2(theta))
-                        let cos_theta = cy_plane.n().dot(&u_aabb_normal);
-                        let sin_theta = (V::Num::ONE - cos_theta.sqr()).sqrt();
-
-                        let eval_distance = cy_radius * sin_theta;
-                        eval_distance.sqr() <= dist_sqr
-
-                        // XXX: Future Fix
-                        // - Calculate line that is made by two planes
-                        // - Check if line is upon the AABB
-                        // - Check line distance between cy_plane's center.
-                    }
-                    Err(_) => {
-                        // The nearest point is never placed inside the cylinder.
-                        false
-                    }
-                }
-            }
-        }
+        // TODO: Implement this!
+        false
     }
 }
 
