@@ -1,5 +1,8 @@
 pub mod check {
-    use crate::primitive::{AabbRect, Hyperplane, LineSegment, NumExt, Number, Vector, VectorExt};
+    use crate::{
+        collision::distance,
+        primitive::{AabbRect, LineSegment, NumExt, Number, Vector, VectorExt},
+    };
 
     #[inline]
     pub fn sphere_sphere<V: Vector>(c_1: &V, r_1: V::Num, c_2: &V, r_2: V::Num) -> bool {
@@ -74,9 +77,60 @@ pub mod check {
             }
         };
 
-        // 0. Since this operation is relatively heavy, it first performs
-        //    preliminary filtering through a radius check. (line-bounding
-        //    sphere distance)
+        let v_min = center.sub(&half_ext);
+        let v_max = center.add(&half_ext);
+        let line = capsule_line;
+
+        // SAFETY: min, max is valid
+        if unsafe { AabbRect::new_unchecked(v_min, v_max) }.contains(&line.p_start) {
+            // Since the logic below only catches hyperplane contacts, the full inclusion
+            // can't be handled only with following algorithm. Therefore, here we firstly
+            // check if both points are within the boundary.
+            //
+            // If any of the point is inside the box, it can safely be treated as hit.
+            return true;
+        }
+
+        let aabb = unsafe { AabbRect::new_unchecked(v_min, v_max) };
+        distance::visit_line_aabb_sqr(line, &aabb, |dist_sqr| {
+            (dist_sqr <= capsule_r.sqr()).then_some(())
+        })
+        .is_some()
+    }
+
+    #[inline]
+    pub fn capsule_capsule<V: Vector>(
+        c1_line: &LineSegment<V>,
+        c1_r: V::Num,
+        c2_line: &LineSegment<V>,
+        c2_r: V::Num,
+    ) -> bool {
+        let [near_1, near_2] = c1_line.nearest_pair(c2_line);
+        near_1.distance_sqr(&near_2) <= (c1_r + c2_r).sqr()
+    }
+}
+
+pub mod distance {
+    use crate::primitive::{
+        AabbRect, Hyperplane, LineSegment, NumExt as _, Number, Vector, VectorExt as _,
+    };
+
+    pub fn line_aabb_sqr<V: Vector>(line: &LineSegment<V>, aabb: &AabbRect<V>) -> V::Num {
+        let mut min_dist_sqr = V::Num::MAXIMUM;
+
+        visit_line_aabb_sqr(line, aabb, |dist_sqr| {
+            min_dist_sqr = min_dist_sqr.min_value(dist_sqr);
+            None::<()>
+        });
+
+        min_dist_sqr
+    }
+
+    pub fn visit_line_aabb_sqr<V: Vector, R>(
+        line: &LineSegment<V>,
+        aabb: &AabbRect<V>,
+        mut visit_with_plane_dist_sqr: impl FnMut(V::Num) -> Option<R>,
+    ) -> Option<R> {
         // 1. Each hyperplane is defined by a minimum point and a maximum
         //    point, denoted as P, and the axis direction as n. Therefore, in
         //    2D there are 4 hyperplanes, in 3D there are 6, and in N
@@ -93,8 +147,6 @@ pub mod check {
         //    clamped point to the line segment again. Repeat for all
         //    hyperplanes, and the smallest value becomes the distance.
 
-        // 0. 이 연산은 상대적으로 무겁기 때문에, 우선 앞의 radius check를 통해
-        //    1차적으로 필터링 수행. (위의 line-distance 체크)
         // 1. 각 초평면은 최소점, 최대점을 P로 두고, 축 방향을 n으로 한다.
         //    따라서, 2D에서는 4개, 3D에서는 6개, N에서는 N*2개의 초평면이
         //    발생.
@@ -106,20 +158,9 @@ pub mod check {
         // 4. 내접하지 않는다면, clamp 완료된 점에서 다시 선분과의 거리를
         //    계산한다. 전체 초평면에 대해 반복하고, 최소값이 거리가 된다.
 
-        let v_min = center.sub(&half_ext);
-        let v_max = center.add(&half_ext);
-        let line = capsule_line;
+        let v_min = aabb.min();
+        let v_max = aabb.max();
         let line_p_end = line.calc_p_end();
-
-        // SAFETY: min, max is valid
-        if unsafe { AabbRect::new_unchecked(v_min, v_max) }.contains(&line.p_start) {
-            // Since the logic below only catches hyperplane contacts, the full inclusion
-            // can't be handled only with following algorithm. Therefore, here we firstly
-            // check if both points are within the boundary.
-            //
-            // If any of the point is inside the box, it can safely be treated as hit.
-            return true;
-        }
 
         for v_plane_p in [v_min, v_max] {
             for i in 0..V::D {
@@ -151,25 +192,14 @@ pub mod check {
                 // Calculate distance between the line and the collision
                 let dist_sqr = line.dist_point_sqr(&v_c);
 
-                if dist_sqr <= capsule_r.sqr() {
-                    // Any of the hyperplane intersects with the capsule
-                    return true;
+                // Implements early return. Condition may optimize away when inlined.
+                if let Some(x) = visit_with_plane_dist_sqr(dist_sqr) {
+                    return Some(x);
                 }
             }
         }
 
-        false
-    }
-
-    #[inline]
-    pub fn capsule_capsule<V: Vector>(
-        c1_line: &LineSegment<V>,
-        c1_r: V::Num,
-        c2_line: &LineSegment<V>,
-        c2_r: V::Num,
-    ) -> bool {
-        let [near_1, near_2] = c1_line.nearest_pair(c2_line);
-        near_1.distance_sqr(&near_2) <= (c1_r + c2_r).sqr()
+        None
     }
 }
 

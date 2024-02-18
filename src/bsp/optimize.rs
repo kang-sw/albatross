@@ -646,7 +646,7 @@ pub(crate) fn recurse_phase_2_split<T: Context>(
                     break 'square_split;
                 }
 
-                let max_value = <<T::Vector as Vector>::Num as Number>::MAXVALUE.to_f64();
+                let max_value = <<T::Vector as Vector>::Num as Number>::MAXIMUM.to_f64();
                 let mut shortest_border = max_value;
 
                 for i in 0..T::Vector::D {

@@ -61,7 +61,7 @@ impl<T: Context> Tree<T> {
         &self,
         p_start: &T::Vector,
         p_end: &T::Vector,
-        radius: <T::Vector as Vector>::Num,
+        s_radius: <T::Vector as Vector>::Num,
         query_margin: <T::Vector as Vector>::Num,
         mut visit: impl FnMut(T::NodeKey, T::ElemKey, &TreeElement<T>),
     ) {
@@ -69,12 +69,12 @@ impl<T: Context> Tree<T> {
 
         if line.s_norm.is_zero() {
             // treat it as a sphere
-            self.trace_sphere(p_start, radius, query_margin, visit);
+            self.trace_sphere(p_start, s_radius, query_margin, visit);
             return;
         }
 
-        let region = AabbRect::new(*p_start, *p_end).extended_by_all(radius + query_margin);
-        let cutter = create_line_region_cutter(*p_start, *p_end, radius + query_margin);
+        let region = AabbRect::new(*p_start, *p_end).extended_by_all(s_radius + query_margin);
+        let cutter = create_line_region_cutter(*p_start, *p_end, s_radius + query_margin);
 
         let visitor = move |node: T::NodeKey| {
             for (elem_id, elem) in self.leaf_iter(node) {
@@ -83,17 +83,17 @@ impl<T: Context> Tree<T> {
 
                 let matches = match com.shape {
                     TraceShape::Sphere(rad) => {
-                        collision::check::capsule_sphere(&line, radius, &elem_pos, rad)
+                        collision::check::capsule_sphere(&line, s_radius, &elem_pos, rad)
                     }
                     TraceShape::Aabb(ext) => {
-                        collision::check::capsule_center_extent(&line, radius, &elem_pos, &ext)
+                        collision::check::capsule_center_extent(&line, s_radius, &elem_pos, &ext)
                     }
                     TraceShape::Capsule {
                         dir,
                         radius: elem_rad,
                     } => collision::check::capsule_capsule(
                         &line,
-                        radius,
+                        s_radius,
                         &LineSegment::from_capsule(elem_pos, dir),
                         elem_rad,
                     ),
@@ -110,12 +110,12 @@ impl<T: Context> Tree<T> {
 
     pub fn trace_sphere(
         &self,
-        center: &T::Vector,
-        radius: <T::Vector as Vector>::Num,
+        p_center: &T::Vector,
+        s_radius: <T::Vector as Vector>::Num,
         query_margin: <T::Vector as Vector>::Num,
         mut visit: impl FnMut(T::NodeKey, T::ElemKey, &TreeElement<T>),
     ) {
-        let region = AabbRect::new_circular(*center, radius + query_margin);
+        let region = AabbRect::new_circular(*p_center, s_radius + query_margin);
         self.query_region(&region.extended_by_all(query_margin), |node| {
             for (elem_id, elem) in self.leaf_iter(node) {
                 let com = self.context.extent(elem);
@@ -123,11 +123,11 @@ impl<T: Context> Tree<T> {
 
                 let matches = match com.shape {
                     TraceShape::Sphere(elem_rad) => {
-                        collision::check::sphere_sphere(center, radius, &elem_pos, elem_rad)
+                        collision::check::sphere_sphere(p_center, s_radius, &elem_pos, elem_rad)
                     }
                     TraceShape::Aabb(ext) => {
                         let aabb = AabbRect::new_extent(elem_pos, ext);
-                        collision::check::aabb_sphere(&aabb, center, radius)
+                        collision::check::aabb_sphere(&aabb, p_center, s_radius)
                     }
                     TraceShape::Capsule {
                         dir,
@@ -135,8 +135,8 @@ impl<T: Context> Tree<T> {
                     } => collision::check::capsule_sphere(
                         &LineSegment::from_capsule(elem_pos, dir),
                         elem_rad,
-                        center,
-                        radius,
+                        p_center,
+                        s_radius,
                     ),
                 };
 
@@ -183,17 +183,23 @@ impl<T: Context> Tree<T> {
         });
     }
 
-    // TODO: trace_cylinder => capsule + hyperplane check
+    /// Trace cylindrical shape from `p_start` to `p_end`. It is inherently a capsule
+    /// trace, but with
     pub fn trace_cylinder(
         &self,
-        direction: &T::Vector,
-        radius: <T::Vector as Vector>::Num,
+        p_start: &T::Vector,
+        p_end: &T::Vector,
+        s_radius: <T::Vector as Vector>::Num,
         query_margin: <T::Vector as Vector>::Num,
         mut visit: impl FnMut(T::NodeKey, T::ElemKey, &TreeElement<T>),
     ) {
+        let line = LineSegment::new(*p_start, *p_end);
+        let region = AabbRect::new(*p_start, *p_end).extended_by_all(s_radius + query_margin);
     }
 
-    // TODO: trace_obb =>  ?? Should we? rotation matters ...
+    // trace_cylinder?
+
+    // trace_obb =>  ?? Should we? rotation matters ...
 }
 
 pub fn create_line_region_cutter<V: Vector>(

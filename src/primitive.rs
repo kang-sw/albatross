@@ -17,8 +17,8 @@ pub trait Number:
     + Div<Output = Self>
     + std::fmt::Debug
 {
-    const MINVALUE: Self;
-    const MAXVALUE: Self;
+    const MINIMUM: Self;
+    const MAXIMUM: Self;
     const ONE: Self;
     const ZERO: Self;
 
@@ -131,11 +131,11 @@ pub trait VectorExt: Vector {
     }
 
     fn minimum() -> Self {
-        Self::from_fn(|_| Self::Num::MINVALUE)
+        Self::from_fn(|_| Self::Num::MINIMUM)
     }
 
     fn maximum() -> Self {
-        Self::from_fn(|_| Self::Num::MAXVALUE)
+        Self::from_fn(|_| Self::Num::MAXIMUM)
     }
 
     fn max_component(&self) -> Self::Num {
@@ -279,8 +279,8 @@ mod _impl_fixed {
 
         (base, $ty:ty $(,$args:tt)*) => {
             impl Number for $ty {
-                const MINVALUE: Self = Self::MIN;
-                const MAXVALUE: Self = Self::MAX;
+                const MINIMUM: Self = Self::MIN;
+                const MAXIMUM: Self = Self::MAX;
                 const ONE: Self = 1 as _;
                 const ZERO: Self = 0 as _;
 
@@ -303,8 +303,8 @@ mod _impl_fixed {
         (fx, $ty:ident <$t:ident>, $tr:ident $(, $arg:tt)*) => {
             #[cfg(feature = "fixed")]
             impl<$t: fixed::types::extra::$tr> Number for $ty<$t> {
-                const MINVALUE: Self = Self::MIN;
-                const MAXVALUE: Self = Self::MAX;
+                const MINIMUM: Self = Self::MIN;
+                const MAXIMUM: Self = Self::MAX;
                 const ONE: Self = Self::const_from_int(1);
                 const ZERO: Self = Self::const_from_int(0);
 
@@ -466,8 +466,8 @@ impl<V: Vector> AabbRect<V> {
         let mut max = V::zero();
 
         for i in 0..V::D {
-            min[i] = V::Num::MINVALUE;
-            max[i] = V::Num::MAXVALUE;
+            min[i] = V::Num::MINIMUM;
+            max[i] = V::Num::MAXIMUM;
         }
 
         Self { min, max }
@@ -494,8 +494,8 @@ impl<V: Vector> AabbRect<V> {
     }
 
     pub fn length(&self, axis: AxisIndex) -> V::Num {
-        if self.max[axis] == V::Num::MAXVALUE || self.min[axis] == V::Num::MINVALUE {
-            V::Num::MAXVALUE
+        if self.max[axis] == V::Num::MAXIMUM || self.min[axis] == V::Num::MINIMUM {
+            V::Num::MAXIMUM
         } else {
             debug_assert!(self.max[axis] - self.min[axis] >= V::Num::ZERO);
             self.max[axis] - self.min[axis]
