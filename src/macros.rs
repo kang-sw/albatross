@@ -187,7 +187,7 @@ where
     }
 
     fn mask() -> B {
-        B::one() << ((E - S) - 1)
+        (B::one() << (E - S)) - B::one()
     }
 }
 
@@ -290,7 +290,7 @@ macro_rules! define_packed_vector {
         $vis:vis struct $name:ident<$base:ty> {
             $(
                 $(#[$elem_meta:meta])*
-                $elem_vis:vis $elem:ident: $elem_ty:ident($elem_start:literal $(..$elem_end:literal)?),
+                $elem_vis:vis $elem:ident: $elem_ty:ident@$elem_start:literal$(..$elem_end:literal)?,
             )*
         }
 
@@ -307,6 +307,14 @@ macro_rules! define_packed_vector {
             use $crate::num::traits::*;
             use $crate::macros::BitAccessProxy;
             use $crate::static_assertions::*;
+
+            $(
+                $(
+                    const_assert!(<$base>::BITS >= $elem_end);
+                    const_assert!($elem_end > $elem_start);
+                )?
+                const_assert!(<$base>::BITS > $elem_start);
+            )*
 
             pub struct ProxyType {
                 $(
@@ -392,9 +400,9 @@ macro_rules! define_packed_vector {
 fn test_custom_bit_vector() {
     define_packed_vector!(
         struct MyVec<u32> {
-            x: i32(2..4),
-            y: i32(1..3),
-            b: bool(0),
+            x: i32@0..3,
+            y: i32@3..4,
+            b: bool@0,
         }
     );
 
@@ -406,4 +414,7 @@ fn test_custom_bit_vector() {
     g.b.set(true);
     assert_eq!(g.0, 1);
     assert!(g.b());
+
+    assert_eq!(g.x(), 1);
+    assert_eq!(g.y(), 0);
 }
