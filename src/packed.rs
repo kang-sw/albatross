@@ -46,6 +46,7 @@ pub trait SignedInteger {
     fn clamp_bits(self, bits: usize) -> Self;
     fn to_normal(self, bits: usize) -> f32;
     fn from_normal(normal: f32, bits: usize) -> Self;
+    fn to_usize(self) -> usize;
 }
 
 /* ---------------------------------------------------------------------------------------------- */
@@ -135,6 +136,10 @@ where
             B::from_normal(z, Z),
         )
     }
+
+    pub fn to_indices(self) -> [usize; 3] {
+        self.to_arr().map(|x| x.to_usize())
+    }
 }
 
 macro_rules! signed {
@@ -203,11 +208,15 @@ macro_rules! signed {
         fn bit_flip(self) -> Self {
             !self
         }
+
+        fn to_usize(self) -> usize {
+            self as usize
+        }
     };
 }
 
-signed!(true, i8 i16 i32 i64 );
-signed!(false, u8 u16 u32 u64 );
+signed!(true, i8 i16 i32 i64);
+signed!(false, u8 u16 u32 u64);
 
 /* ----------------------------------------- Conversion ----------------------------------------- */
 
@@ -291,8 +300,58 @@ mod __impl_glam {
         (u64, U64Vec3)
     );
 
-    impl<B, const X: usize, const Y: usize, const Z: usize> PackedIVec3<B, X, Y, Z> where B: BitContainer
-    {}
+    impl<B, const X: usize, const Y: usize, const Z: usize> PackedIVec3<B, X, Y, Z>
+    where
+        B: BitContainer,
+    {
+        pub fn to_ivec3(self) -> IVec3
+        where
+            B: Into<i32>,
+        {
+            let [x, y, z] = self.to_arr().map(|s| s.into());
+            IVec3::new(x, y, z)
+        }
+
+        pub fn to_uvec3(self) -> UVec3
+        where
+            B: Into<u32>,
+        {
+            let [x, y, z] = self.to_arr().map(|s| s.into());
+            UVec3::new(x, y, z)
+        }
+
+        pub fn to_i16vec3(self) -> I16Vec3
+        where
+            B: Into<i16>,
+        {
+            let [x, y, z] = self.to_arr().map(|s| s.into());
+            I16Vec3::new(x, y, z)
+        }
+
+        pub fn to_u16vec3(self) -> U16Vec3
+        where
+            B: Into<u16>,
+        {
+            let [x, y, z] = self.to_arr().map(|s| s.into());
+            U16Vec3::new(x, y, z)
+        }
+
+        pub fn to_i64vec3(self) -> I64Vec3
+        where
+            B: Into<i64>,
+        {
+            let [x, y, z] = self.to_arr().map(|s| s.into());
+            I64Vec3::new(x, y, z)
+        }
+
+        pub fn to_u64vec3(self) -> U64Vec3
+        where
+            B: Into<u64>,
+        {
+            let [x, y, z] = self.to_arr().map(|s| s.into());
+            U64Vec3::new(x, y, z)
+        }
+    }
 }
 
 /* ---------------------------------------------------------------------------------------------- */
