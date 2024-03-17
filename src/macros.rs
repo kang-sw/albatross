@@ -38,6 +38,7 @@ macro_rules! define_custom_vector {
         #[allow(unused)]
         const _: () = {
             use $crate::num::traits::*;
+            use $crate::define_custom_vector as _m;
 
             impl $name {
                 #[inline]
@@ -56,7 +57,7 @@ macro_rules! define_custom_vector {
 
                 #[inline]
                 pub fn to_array<T>(self) -> [
-                    T; $crate::define_custom_vector!(@count $($elem )*)
+                    T; _m!(@count $($elem )*)
                 ] where
                 T: Num + Copy + 'static,
                 $($elem_ty: AsPrimitive<T>,)*
@@ -69,12 +70,12 @@ macro_rules! define_custom_vector {
                 }
             }
 
-            impl<T> From<[T; $crate::define_custom_vector!(@count $($elem )*)]> for $name
+            impl<T> From<[T;_m!(@count $($elem )*)]> for $name
             where
                 $(T: AsPrimitive<$elem_ty>,)*
             {
                 #[inline]
-                fn from([$( $elem ),*]: [T; $crate::define_custom_vector!(@count $($elem )*)]) -> Self {
+                fn from([$( $elem ),*]: [T; _m!(@count $($elem )*)]) -> Self {
                     Self {
                         $($elem: $elem.as_(),)*
                     }
@@ -113,8 +114,11 @@ macro_rules! define_custom_vector {
         $crate::define_custom_vector!( $($rest)* );
     };
 
-    (@count $head:ident) => { 1 };
-    (@count $head:ident $($tail:ident)*) => { 1 + $crate::define_custom_vector!(@count $($tail)*) };
+    (@count $_0:ident) => { 1 };
+    (@count $_0:ident $_1:ident) => { 2 };
+    (@count $_0:ident $_1:ident $_2:ident) => { 3 };
+    (@count $_0:ident $_1:ident $_2:ident $_3:ident) => { 4 };
+    (@count $_0:ident $_1:ident $_2:ident $_3:ident $($tail:ident)*) => { 4 + _m!(@count $($tail)*) };
 
     () => {};
 }
@@ -127,6 +131,15 @@ fn test_custom_vector() {
             y: f32,
             z: f64,
             w: i32,
+        }
+
+        struct OtherVec {
+            _0: i32,
+            _1: f32,
+            _2: f64,
+            _3: i32,
+            _4: i32,
+            _5: i32,
         }
     );
 
