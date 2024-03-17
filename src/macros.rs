@@ -250,7 +250,6 @@ where
 pub trait AnyInt {
     const SIGNED: bool = false;
 
-    fn bit_flip(self) -> Self;
     fn to_normal(self, bits: usize) -> f32;
     fn from_normal(normal: f32, bits: usize) -> Self;
 }
@@ -302,10 +301,6 @@ macro_rules! signed {
 
     (base, $value:literal) => {
         const SIGNED: bool = $value;
-
-        fn bit_flip(self) -> Self {
-            !self
-        }
     };
 }
 
