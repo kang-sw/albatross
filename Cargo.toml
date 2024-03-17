@@ -19,7 +19,10 @@ enum-as-inner = "0.6"
 typenum = "1"
 
 nalgebra = { version = "0.32", optional = true }
+glam = { version = "0.25", optional = true, features = ["serde"] }
+
+serde = { version = "1", optional = true, features = ["derive"] }
+bevy_reflect = { version = "0.13", optional = true, features = ["bevy_math"] }
 
 [features]
-nalgebra = ["dep:nalgebra"]
-fixed = ["dep:fixed"]
+reflect = ["dep:bevy_reflect"]

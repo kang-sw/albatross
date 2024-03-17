@@ -888,6 +888,7 @@ impl<V: Vector> PositionalPlane<V> {
         }
     }
 
+    /// ```text
     /// Line:
     ///
     ///     p_L + t * u_L, where 0 <= t <= s, s is line length
@@ -910,6 +911,7 @@ impl<V: Vector> PositionalPlane<V> {
     /// Therefore, the contact point is:
     ///
     ///     p_H = p_L + t_0 * u_L, where u_P dot u_L != 0
+    /// ````
     pub fn contact_point(&self, line: &LineSegment<V>) -> Option<V> {
         let dot_p_l = self.n.dot(&line.u_d);
         if dot_p_l.is_zero() {
