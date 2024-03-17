@@ -9,10 +9,10 @@ use bevy_reflect::Reflect;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "glam")]
-pub use glam_impls::*;
+pub use glam_rotation::*;
 
 #[cfg(feature = "glam")]
-mod glam_impls;
+mod glam_rotation;
 
 #[doc(hidden)]
 pub trait BitContainer:
