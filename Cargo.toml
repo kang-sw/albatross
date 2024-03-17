@@ -25,5 +25,7 @@ glam = { version = "0.25", optional = true, features = ["serde"] }
 serde = { version = "1", optional = true, features = ["derive"] }
 bevy_reflect = { version = "0.13", optional = true, features = ["bevy_math"] }
 
+static_assertions = "1"
+
 [features]
 reflect = ["dep:bevy_reflect"]

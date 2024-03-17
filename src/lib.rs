@@ -16,3 +16,4 @@ pub extern crate fixed;
 
 pub extern crate derive_more;
 pub extern crate num;
+pub extern crate static_assertions;
