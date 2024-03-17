@@ -321,7 +321,7 @@ macro_rules! define_packed_vector {
         $vis:vis struct $name:ident<$base:ty> {
             $(
                 $(#[$elem_meta:meta])*
-                $elem_vis:vis $elem:ident: $elem_ty:ident@$elem_start:literal$(..$elem_end:literal)?,
+                $elem:ident: $elem_ty:ident@$elem_start:literal$(..$elem_end:literal)?,
             )*
         }
 
@@ -350,7 +350,7 @@ macro_rules! define_packed_vector {
             #[repr(C)]
             pub struct ProxyType {
                 $(
-                    $elem_vis $elem: _m!(@proxy $base, $elem_ty, $elem_start $($elem_end)?),
+                    pub $elem: _m!(@proxy $base, $elem_ty, $elem_start $($elem_end)?),
                 )*
 
                 // Unused body, to make `taking out` the proxy type safe.
@@ -487,4 +487,102 @@ fn test_custom_bit_vector() {
     dbg!(g);
 
     // TODO: migrate test cases
+}
+
+// TODO: migrate test cases for packed vector
+#[cfg(any())]
+#[cfg(test)]
+mod tests {
+    use super::PackedIVec3;
+
+    #[test]
+    fn test_packed_ivec3_unsigned() {
+        let g = PackedIVec3::<u8, 2, 2, 4>::new(1, 2, 3);
+        assert_eq!(g.to_arr(), [1, 2, 3]);
+
+        let k = PackedIVec3::<u16, 4, 4, 8>::new(2, 3, 4);
+        assert_eq!(k.to_arr(), [2, 3, 4]);
+
+        let k = PackedIVec3::<u16, 4, 4, 8>::new(15, 15, 15);
+        assert_eq!(k.to_arr(), [15, 15, 15]);
+
+        let k = PackedIVec3::<u16, 0, 4, 12>::new(0, 15, 4095);
+        assert_eq!(k.to_arr(), [0, 15, 4095]);
+
+        // Test case for u32 with different bit widths
+        let m = PackedIVec3::<u32, 10, 10, 12>::new(512, 512, 1024);
+        assert_eq!(m.to_arr(), [512, 512, 1024]);
+
+        // Test case with maximum values for given bit widths
+        let n = PackedIVec3::<u32, 5, 5, 6>::new(31, 31, 63);
+        assert_eq!(n.to_arr(), [31, 31, 63]);
+
+        // Test case with minimum values (assuming signed integers are not allowed)
+        let o = PackedIVec3::<u8, 3, 3, 2>::new(0, 0, 0);
+        assert_eq!(o.to_arr(), [0, 0, 0]);
+    }
+
+    #[test]
+    fn test_packed_ivec3_signed() {
+        // Test case with mixed positive and negative values
+        let a = PackedIVec3::<i16, 5, 6, 5>::new(-16, 31, -1);
+        assert_eq!(a.to_arr(), [-16, 31, -1]);
+
+        // Test case with all negative values
+        let b = PackedIVec3::<i8, 3, 3, 2>::new(-4, -3, -2);
+        assert_eq!(b.to_arr(), [-4, -3, -2]);
+
+        // Test case to verify handling of minimum and maximum values for signed integers
+        let c = PackedIVec3::<i32, 16, 1, 15>::new(i16::MIN as i32, 0, (i16::MAX >> 1) as i32);
+        assert_eq!(c.to_arr(), [i16::MIN as i32, 0, (i16::MAX >> 1) as i32]);
+
+        // Test case to check behavior with values just beyond positive and negative limits
+        let d = PackedIVec3::<i16, 4, 4, 8>::new(-9, 8, 128); // Beyond the range of 4-bit signed (-8 to 7) and 8-bit signed (-128 to 127)
+        assert_eq!(d.to_arr(), [-8, 7, 127]); // Assuming clipping or wrapping to the closest valid value
+
+        // Test case with zero values to verify no sign bit issues
+        let e = PackedIVec3::<i32, 10, 10, 12>::new(0, 0, 0);
+        assert_eq!(e.to_arr(), [0, 0, 0]);
+    }
+
+    #[test]
+    fn test_normals_conversion() {
+        // Round-Trip Conversion Test for Unsigned Type
+        let original_unsigned = PackedIVec3::<u16, 5, 5, 6>::new(31, 0, 63);
+        let normalized_vec = original_unsigned.to_normals();
+        let converted_back = PackedIVec3::from_normals(normalized_vec);
+        assert_eq!(original_unsigned, converted_back);
+
+        // Round-Trip Conversion Test for Signed Type
+        let original_signed = PackedIVec3::<i16, 5, 5, 6>::new(-16, 0, 31);
+        let normalized_vec_signed = original_signed.to_normals();
+        let converted_back_signed = PackedIVec3::from_normals(normalized_vec_signed);
+        assert_eq!(original_signed, converted_back_signed);
+    }
+
+    #[test]
+    fn test_normalization_accuracy() {
+        // Unsigned normalization
+        let max_value_unsigned = PackedIVec3::<u16, 5, 5, 6>::new(31, 31, 63);
+        let normalized_unsigned = max_value_unsigned.to_normals();
+        assert!((normalized_unsigned[0] - 1.0).abs() < 1.0 / 31.0);
+        assert!((normalized_unsigned[1] - 1.0).abs() < 1.0 / 31.0);
+        assert!((normalized_unsigned[2] - 1.0).abs() < 1.0 / 63.0);
+
+        // Signed normalization
+        let max_value_signed = PackedIVec3::<i16, 5, 5, 6>::new(-16, 0, 31);
+        let normalized_signed = max_value_signed.to_normals();
+        assert!((normalized_signed[0] + 1.0).abs() < 1.0 / 16.0); // Mapping -16 to -1.0
+        assert!(normalized_signed[1].abs() < 1.0 / 16.0); // Mapping 0 to 0.0
+        assert!((normalized_signed[2] - 1.0).abs() < 1.0 / 31.0); // Mapping 31 to 1.0
+    }
+
+    #[test]
+    fn test_denormalization_accuracy() {
+        // Test denormalization from normals back to packed integers
+        let normal_vec = [1.0, 0.5, -1.0];
+        let packed = PackedIVec3::<i16, 5, 5, 6>::from_normals(normal_vec);
+        // Assuming B::from_normal correctly maps the floating-point range back to integers
+        assert_eq!(packed.to_arr(), [15, 8, -32]); // Example expected values, adjust based on actual mapping logic
+    }
 }
