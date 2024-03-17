@@ -33,18 +33,21 @@ macro_rules! define_custom_vector {
             use $crate::num::traits::*;
 
             impl $name {
+                #[inline]
                 pub const fn new($($elem: $elem_ty),*) -> Self {
                     Self {
                         $($elem),*
                     }
                 }
 
+                #[inline]
                 pub const fn to_tuple(self) -> ($($elem_ty,)*) {
                     ($(
                         self.$elem,
                     )*)
                 }
 
+                #[inline]
                 pub fn to_array<T>(self) -> [
                     T; $crate::define_custom_vector!(@count $($elem )*)
                 ] where
@@ -64,6 +67,7 @@ macro_rules! define_custom_vector {
             where
                 $(T: AsPrimitive<$elem_ty>,)*
             {
+                #[inline]
                 fn from([$( $elem ),*]: [T; $crate::define_custom_vector!(@count $($elem )*)]) -> Self {
                     Self {
                         $($elem: $elem.as_(),)*
@@ -76,6 +80,7 @@ macro_rules! define_custom_vector {
             {
                 type Output = Self;
 
+                #[inline]
                 fn mul(self, rhs: __R) -> Self::Output
                 {
                     Self {
@@ -89,6 +94,7 @@ macro_rules! define_custom_vector {
             {
                 type Output = Self;
 
+                #[inline]
                 fn div(self, rhs: __R) -> Self::Output
                 {
                     Self {
