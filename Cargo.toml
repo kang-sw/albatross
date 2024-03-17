@@ -11,9 +11,10 @@ slab = "0.4"
 tap = "1"
 fixed = { version = "1", features = ["num-traits"], optional = true }
 
+num = "0.4"
 thiserror = "1"
 
-derive_more = "0.99"
+derive_more = { version = "1.0.0-beta", features = ["full"] }
 enum-as-inner = "0.6"
 
 typenum = "1"

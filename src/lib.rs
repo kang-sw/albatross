@@ -3,6 +3,7 @@
 pub mod bitindex;
 pub mod bsp;
 pub mod collision;
+pub mod macros;
 pub mod packed;
 pub mod primitive;
 
@@ -12,3 +13,6 @@ pub use slotmap::Key;
 
 #[cfg(feature = "fixed")]
 pub extern crate fixed;
+
+pub extern crate derive_more;
+pub extern crate num;
