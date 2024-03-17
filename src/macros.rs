@@ -164,16 +164,66 @@ pub struct BitAccessProxy<B, T, const S: usize, const E: usize> {
 impl<B, T, const S: usize, const E: usize> BitAccessProxy<B, T, S, E>
 where
     B: 'static + num::PrimInt + num::Unsigned,
+    T: 'static + Copy,
 {
     #[inline]
     #[doc(hidden)]
-    pub fn __get(&self) -> B
-    where
-        T: 'static + Copy,
-    {
+    pub fn __get(&self) -> B {
         // SAEFTY: `self` is a valid reference to `B`
         let base = unsafe { &*(self as *const Self as *const B) };
         (*base >> S) & Self::mask()
+    }
+
+    #[inline]
+    pub fn get(&self) -> T
+    where
+        B: AsPrimitive<T>,
+        T: AnyInt,
+    {
+        if T::SIGNED {
+            let sign_bit_pos = (E - S) as u32;
+            let value = self.__get();
+            let leading_zeros = value.leading_zeros();
+            let msb_pos = B::max_value().count_ones() - leading_zeros;
+
+            if msb_pos != sign_bit_pos {
+                value
+            } else {
+                value | (B::max_value() << sign_bit_pos as usize)
+            }
+        } else {
+            self.__get()
+        }
+        .as_()
+    }
+
+    #[inline]
+    pub fn normal(&self) -> f32
+    where
+        B: AsPrimitive<T>,
+        T: AnyInt,
+    {
+        self.get().to_normal(E - S)
+    }
+
+    #[inline]
+    pub fn set_normal(&mut self, value: f32)
+    where
+        B: AsPrimitive<T>,
+        T: AnyInt + AsPrimitive<B>,
+    {
+        debug_assert!((0.0..=1.0).contains(&value));
+        self.set(T::from_normal(value, E - S));
+    }
+
+    #[inline]
+    pub fn to<D>(&self) -> D
+    where
+        B: AsPrimitive<T>,
+        T: AnyInt + AsPrimitive<D>,
+        D: 'static + Copy,
+    {
+        self.get().as_()
     }
 
     #[inline]
@@ -186,38 +236,31 @@ where
         *base = (*base & !(Self::mask() << S)) | (value << S);
     }
 
+    #[inline]
     fn mask() -> B {
         (B::one() << (E - S)) - B::one()
     }
+
+    // TODO: Clamp support?
 }
 
 /* --------------------------------------- Signed Integers -------------------------------------- */
 
 #[doc(hidden)]
-pub trait SignedInteger {
+pub trait AnyInt {
     const SIGNED: bool = false;
 
-    fn leading_zeros(self) -> u32;
     fn bit_flip(self) -> Self;
-    fn clamp_bits(self, bits: usize) -> Self;
     fn to_normal(self, bits: usize) -> f32;
     fn from_normal(normal: f32, bits: usize) -> Self;
-    fn to_usize(self) -> usize;
 }
 
 macro_rules! signed {
 
     (true, $($t:ty)*) => {
         $(
-            impl SignedInteger for $t {
+            impl AnyInt for $t {
                 signed!(base, true);
-
-                fn clamp_bits(self, bits: usize) -> Self {
-                    self.clamp(
-                        -(1 << (bits - 1)),
-                        (1 << (bits - 1)) - 1
-                    )
-                }
 
                 fn to_normal(self, bits: usize) -> f32 {
                     2.0 * if self >= 0 {
@@ -243,12 +286,8 @@ macro_rules! signed {
 
     (false, $($t:ty)*) => {
         $(
-            impl SignedInteger for $t {
+            impl AnyInt for $t {
                 signed!(base, false);
-
-                fn clamp_bits(self, bits: usize) -> Self {
-                    self.min((1 << bits) - 1)
-                }
 
                 fn to_normal(self, bits: usize) -> f32 {
                     self as f32 / ((1 << bits) - 1) as f32
@@ -264,16 +303,8 @@ macro_rules! signed {
     (base, $value:literal) => {
         const SIGNED: bool = $value;
 
-        fn leading_zeros(self) -> u32 {
-            self.leading_zeros()
-        }
-
         fn bit_flip(self) -> Self {
             !self
-        }
-
-        fn to_usize(self) -> usize {
-            self as usize
         }
     };
 }
@@ -316,10 +347,14 @@ macro_rules! define_packed_vector {
                 const_assert!(<$base>::BITS > $elem_start);
             )*
 
+            #[repr(C)]
             pub struct ProxyType {
                 $(
                     $elem_vis $elem: _m!(@proxy $base, $elem_ty, $elem_start $($elem_end)?),
                 )*
+
+                // Unused body, to make `taking out` the proxy type safe.
+                _body: $base,
             }
 
             impl std::ops::Deref for $name {
@@ -338,6 +373,18 @@ macro_rules! define_packed_vector {
                 }
             }
 
+            impl std::fmt::Debug for $name
+            where $( $elem_ty: std::fmt::Debug, )*
+            {
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    f.debug_struct(stringify!($name))
+                    $(
+                        .field(stringify!($elem), &self.$elem())
+                    )*
+                    .finish()
+                }
+            }
+
             impl $name {
                 #[inline]
                 pub fn new(
@@ -352,11 +399,16 @@ macro_rules! define_packed_vector {
                     base
                 }
 
+                // TODO: new_clamped
+
                 $(
                     #[inline]
                     _m!(@getter $elem_ty, $elem);
                 )*
+
+                // TODO: from/into array, if all elem supports cast
             }
+
         };
 
         $crate::define_packed_vector!($($rest)*);
@@ -377,6 +429,7 @@ macro_rules! define_packed_vector {
     };
 
     /* ---------------------------------- Getter Function Body ---------------------------------- */
+
     (@getter bool, $elem:ident) => {
         pub fn $elem(&self) -> bool {
             self.$elem.__get() != 0
@@ -385,7 +438,7 @@ macro_rules! define_packed_vector {
 
     (@getter $elem_ty:ty, $elem:ident) => {
         pub fn $elem(&self) -> $elem_ty {
-            self.$elem.__get() as _
+            self.$elem.get()
         }
     };
 
@@ -401,7 +454,7 @@ fn test_custom_bit_vector() {
     define_packed_vector!(
         struct MyVec<u32> {
             x: i32@0..3,
-            y: i32@3..4,
+            y: i32@3..5,
             b: bool@0,
         }
     );
@@ -417,4 +470,21 @@ fn test_custom_bit_vector() {
 
     assert_eq!(g.x(), 1);
     assert_eq!(g.y(), 0);
+
+    g.x.set(2);
+    assert!(!g.b());
+    assert_eq!(g.0, 2);
+
+    g.x.set(-1);
+    assert_eq!(g.x(), -1);
+    assert_eq!(g.0, 0b111);
+
+    g.y.set(1);
+    assert_eq!(g.x(), -1);
+    assert_eq!(g.y(), 1);
+    assert_eq!(g.0, 0b1111);
+
+    dbg!(g);
+
+    // TODO: migrate test cases
 }
