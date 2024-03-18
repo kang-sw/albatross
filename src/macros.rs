@@ -187,7 +187,7 @@ where
     pub fn get(&self) -> T
     where
         B: AsPrimitive<T>,
-        T: AnyInt,
+        T: IntegerExt,
     {
         if T::SIGNED {
             let sign_bit_pos = (E - S) as u32;
@@ -210,7 +210,7 @@ where
     pub fn normal(&self) -> f32
     where
         B: AsPrimitive<T>,
-        T: AnyInt,
+        T: IntegerExt,
     {
         self.get().to_normal(E - S)
     }
@@ -219,7 +219,7 @@ where
     pub fn set_normal(&mut self, value: f32)
     where
         B: AsPrimitive<T>,
-        T: AnyInt + AsPrimitive<B>,
+        T: IntegerExt + AsPrimitive<B>,
     {
         debug_assert!((0.0..=1.0).contains(&value));
         self.set(T::from_normal(value, E - S));
@@ -229,7 +229,7 @@ where
     pub fn to<D>(&self) -> D
     where
         B: AsPrimitive<T>,
-        T: AnyInt + AsPrimitive<D>,
+        T: IntegerExt + AsPrimitive<D>,
         D: 'static + Copy,
     {
         self.get().as_()
@@ -246,28 +246,93 @@ where
     }
 
     #[inline]
+    pub fn set_clamped(&mut self, value: T)
+    where
+        T: IntegerExt + AsPrimitive<B>,
+    {
+        self.set(value.clamped(E - S));
+    }
+
+    #[inline]
+    pub fn mutate(&mut self, f: impl FnOnce(T) -> T)
+    where
+        T: AsPrimitive<B> + IntegerExt,
+        B: AsPrimitive<T>,
+    {
+        self.set(f(self.get()));
+    }
+
+    #[inline]
     fn mask() -> B {
         (B::one() << (E - S)) - B::one()
     }
-
-    // TODO: Clamp support?
 }
+
+macro_rules! define_opr {
+    (
+        $trait_name:ident,
+        $constraint:tt,
+        $($body:tt)*
+    ) => {
+        impl<B, T, const S: usize, const E: usize> std::ops::$trait_name<T>
+            for BitAccessProxy<B, T, S, E>
+        where
+            B: 'static + num::PrimInt + num::Unsigned + AsPrimitive<T>,
+            T: 'static + Copy + IntegerExt + AsPrimitive<B> + std::ops::$constraint<Output = T>,
+        {
+            $($body)*
+        }
+    };
+}
+
+define_opr!(
+    AddAssign,
+    Add,
+    fn add_assign(&mut self, rhs: T) {
+        self.set(self.get() + rhs);
+    }
+);
+
+define_opr!(
+    SubAssign,
+    Sub,
+    fn sub_assign(&mut self, rhs: T) {
+        self.set(self.get() - rhs);
+    }
+);
+
+define_opr!(
+    MulAssign,
+    Mul,
+    fn mul_assign(&mut self, rhs: T) {
+        self.set(self.get() * rhs);
+    }
+);
+
+define_opr!(
+    DivAssign,
+    Div,
+    fn div_assign(&mut self, rhs: T) {
+        self.set(self.get() / rhs);
+    }
+);
 
 /* --------------------------------------- Signed Integers -------------------------------------- */
 
 #[doc(hidden)]
-pub trait AnyInt {
+pub trait IntegerExt {
     const SIGNED: bool = false;
 
     fn to_normal(self, bits: usize) -> f32;
     fn from_normal(normal: f32, bits: usize) -> Self;
+    fn clamped(self, bits: usize) -> Self;
 }
 
 macro_rules! signed {
 
     (true, $($t:ty)*) => {
         $(
-            impl AnyInt for $t {
+            impl IntegerExt for $t {
                 signed!(base, true);
 
                 fn to_normal(self, bits: usize) -> f32 {
@@ -285,16 +350,19 @@ macro_rules! signed {
                         (normal * ((1 << bits) - 1) as f32)
                     } else {
                         (normal * (1 << bits) as f32)
-                    }.round () as Self
+                    }.round() as Self
                 }
 
+                fn clamped(self, bits: usize) -> Self {
+                    self.clamp(-(1 << (bits - 1)), (1 << (bits - 1)) - 1)
+                }
             }
         )*
     };
 
     (false, $($t:ty)*) => {
         $(
-            impl AnyInt for $t {
+            impl IntegerExt for $t {
                 signed!(base, false);
 
                 fn to_normal(self, bits: usize) -> f32 {
@@ -303,6 +371,10 @@ macro_rules! signed {
 
                 fn from_normal(normal: f32, bits: usize) -> Self {
                     (normal * ((1 << bits) - 1) as f32).round() as Self
+                }
+
+                fn clamped(self, bits: usize) -> Self {
+                    self.clamp(0, (1 << bits) - 1)
                 }
             }
         )*
@@ -390,6 +462,8 @@ macro_rules! define_packed_vector {
             }
 
             impl $name {
+                pub const ZERO: Self = Self(0);
+
                 #[inline]
                 pub fn new(
                     $(
@@ -403,16 +477,11 @@ macro_rules! define_packed_vector {
                     base
                 }
 
-                // TODO: new_clamped
-
                 $(
                     #[inline]
                     _m!(@getter $elem_ty, $elem);
                 )*
-
-                // TODO: from/into array, if all elem supports cast
             }
-
         };
 
         $crate::define_packed_vector!($($rest)*);
@@ -447,6 +516,12 @@ macro_rules! define_packed_vector {
     };
 
     /* ·························································································· */
+
+    (@count $_0:ident) => { 1 };
+    (@count $_0:ident $_1:ident) => { 2 };
+    (@count $_0:ident $_1:ident $_2:ident) => { 3 };
+    (@count $_0:ident $_1:ident $_2:ident $_3:ident) => { 4 };
+    (@count $_0:ident $_1:ident $_2:ident $_3:ident $($tail:ident)*) => { 4 + _m!(@count $($tail)*) };
 
     () => {
 
