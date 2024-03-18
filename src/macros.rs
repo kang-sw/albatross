@@ -82,6 +82,15 @@ macro_rules! define_custom_vector {
                 }
             }
 
+            impl From<( $($elem_ty, )* )> for $name {
+                #[inline]
+                fn from(($($elem,)*): ( $($elem_ty, )* )) -> Self {
+                    Self {
+                        $($elem,)*
+                    }
+                }
+            }
+
             impl<__R> std::ops::Mul<__R> for $name
                 where __R: Copy $(+AsPrimitive<$elem_ty>)*
             {
