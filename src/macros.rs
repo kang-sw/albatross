@@ -19,7 +19,7 @@ macro_rules! define_custom_vector {
         $($rest:tt)*
     ) => {
         $(#[$meta])*
-        #[derive(Debug, Clone, Copy, PartialEq)]
+        #[derive(Default, Debug, Clone, Copy, PartialEq)]
         #[derive(
             $crate::derive_more::Add,
             $crate::derive_more::Sub,
@@ -426,7 +426,7 @@ macro_rules! define_packed_vector {
             $(
                 $(#[$elem_meta:meta])*
                 // element identifier + representation type
-                $elem:ident: $elem_ty:ident
+                $elem_vis:vis $elem:ident: $elem_ty:ident
                     // start bit position .. to end bit position
                     @ $elem_start:literal$(..$elem_end:literal)?
                     // optional alternative representation type, From + Into required
@@ -457,9 +457,9 @@ macro_rules! define_packed_vector {
             )*
 
             #[repr(C)]
-            pub struct ProxyType {
+            $vis struct ProxyType {
                 $(
-                    pub $elem: _m!(@proxy $base, $elem_ty, $elem_start $($elem_end)?),
+                    $elem_vis $elem: _m!(@proxy $base, $elem_ty, $elem_start $($elem_end)?),
                 )*
 
                 // Unused body, to make `taking out` the proxy type safe.
@@ -498,19 +498,6 @@ macro_rules! define_packed_vector {
                 pub const ZERO: Self = Self(0);
 
                 #[inline]
-                pub fn new(
-                    $(
-                        $elem: $elem_ty,
-                    )*
-                ) -> Self {
-                    let mut base = Self::default();
-                    $(
-                        base.$elem.set($elem);
-                    )*
-                    base
-                }
-
-                #[inline]
                 pub fn to_tuple(self) -> ($($elem_ty,)*) {
                     (
                         $(
@@ -534,11 +521,13 @@ macro_rules! define_packed_vector {
 
                 #[inline]
                 pub fn from_tuple(
-                    $(
-                        $elem: $elem_ty,
-                    )*
+                    ($( $elem, )* ): ($($elem_ty,)*)
                 ) -> Self {
-                    Self::new($($elem,)*)
+                    let mut base = Self::default();
+                    $(
+                        base.$elem.set($elem);
+                    )*
+                    base
                 }
 
                 #[inline]
@@ -549,7 +538,7 @@ macro_rules! define_packed_vector {
                     T: $(AsPrimitive<$elem_ty> +)* Copy,
                     $($elem_ty: AsPrimitive<T>,)*
                 {
-                    Self::new($($elem.as_(),)*)
+                    Self::from_tuple(($($elem.as_(),)*))
                 }
 
                 $(
@@ -615,7 +604,7 @@ fn test_custom_bit_vector() {
         }
     );
 
-    let mut g = MyVec(0);
+    let mut g = MyVec::ZERO;
     assert_eq!(&g.x as *const _ as usize, &g as *const _ as usize);
     assert_eq!(&g.y as *const _ as usize, &g as *const _ as usize);
     assert_eq!(&g.b as *const _ as usize, &g as *const _ as usize);
