@@ -477,6 +477,48 @@ macro_rules! define_packed_vector {
                     base
                 }
 
+                #[inline]
+                pub fn to_tuple(self) -> ($($elem_ty,)*) {
+                    (
+                        $(
+                            self.$elem(),
+                        )*
+                    )
+                }
+
+                #[inline]
+                pub fn to_array<T>(self) -> [T; _m!(@count $($elem )*)]
+                where
+                    T: Num + Copy + 'static,
+                    $($elem_ty: AsPrimitive<T>,)*
+                {
+                    [
+                        $(
+                            AsPrimitive::as_(self.$elem()),
+                        )*
+                    ]
+                }
+
+                #[inline]
+                pub fn from_tuple(
+                    $(
+                        $elem: $elem_ty,
+                    )*
+                ) -> Self {
+                    Self::new($($elem,)*)
+                }
+
+                #[inline]
+                pub fn from_array<T>([
+                    $($elem,)*
+                ]: [T; _m!(@count $($elem )*)]) -> Self
+                where
+                    T: $(AsPrimitive<$elem_ty> +)* Copy,
+                    $($elem_ty: AsPrimitive<T>,)*
+                {
+                    Self::new($($elem.as_(),)*)
+                }
+
                 $(
                     #[inline]
                     _m!(@getter $elem_ty, $elem);
