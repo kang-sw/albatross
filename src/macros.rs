@@ -289,7 +289,7 @@ define_opr!(
     AddAssign,
     Add,
     fn add_assign(&mut self, rhs: T) {
-        self.set(self.get() + rhs);
+        self.mutate(|x| x + rhs);
     }
 );
 
@@ -297,7 +297,7 @@ define_opr!(
     SubAssign,
     Sub,
     fn sub_assign(&mut self, rhs: T) {
-        self.set(self.get() - rhs);
+        self.mutate(|x| x - rhs);
     }
 );
 
@@ -305,7 +305,7 @@ define_opr!(
     MulAssign,
     Mul,
     fn mul_assign(&mut self, rhs: T) {
-        self.set(self.get() * rhs);
+        self.mutate(|x| x * rhs);
     }
 );
 
@@ -313,9 +313,37 @@ define_opr!(
     DivAssign,
     Div,
     fn div_assign(&mut self, rhs: T) {
-        self.set(self.get() / rhs);
+        self.mutate(|x| x / rhs);
     }
 );
+
+/* ------------------------------------- Bit Proxy With Type ------------------------------------ */
+
+pub struct BitAccessProxyAs<B, T, As, const S: usize, const E: usize> {
+    _marker: std::marker::PhantomData<(B, T, As)>,
+}
+
+impl<B, T, As, const S: usize, const E: usize> std::ops::Deref
+    for BitAccessProxyAs<B, T, As, S, E>
+{
+    type Target = BitAccessProxy<B, T, S, E>;
+
+    fn deref(&self) -> &Self::Target {
+        // SAFETY: `self` is a valid reference to `BitAccessProxy`
+        unsafe { &*(self as *const Self as *const BitAccessProxy<B, T, S, E>) }
+    }
+}
+
+impl<B, T, As, const S: usize, const E: usize> std::ops::DerefMut
+    for BitAccessProxyAs<B, T, As, S, E>
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        // SAFETY: `self` is a valid reference to `BitAccessProxy`
+        unsafe { &mut *(self as *mut Self as *mut BitAccessProxy<B, T, S, E>) }
+    }
+}
+
+// TODO: set(As), get() -> As
 
 /* --------------------------------------- Signed Integers -------------------------------------- */
 
@@ -397,7 +425,12 @@ macro_rules! define_packed_vector {
         $vis:vis struct $name:ident<$base:ty> {
             $(
                 $(#[$elem_meta:meta])*
-                $elem:ident: $elem_ty:ident@$elem_start:literal$(..$elem_end:literal)?,
+                // element identifier + representation type
+                $elem:ident: $elem_ty:ident
+                    // start bit position .. to end bit position
+                    @ $elem_start:literal$(..$elem_end:literal)?
+                    // optional alternative representation type, From + Into required
+                    $(as $elem_as_ty:path)?,
             )*
         }
 
@@ -576,6 +609,8 @@ fn test_custom_bit_vector() {
         struct MyVec<u32> {
             x: i32@0..3,
             y: i32@3..5,
+            z: u32@5..7,
+            w: u32@7..10,
             b: bool@0,
         }
     );
@@ -604,6 +639,24 @@ fn test_custom_bit_vector() {
     assert_eq!(g.x(), -1);
     assert_eq!(g.y(), 1);
     assert_eq!(g.0, 0b1111);
+
+    g.z.set(1);
+    assert_eq!(g.z(), 1);
+    g.z += 1;
+    assert_eq!(g.z(), 2);
+    g.z += 1;
+    assert_eq!(g.z(), 3);
+    g.z += 1;
+    assert_eq!(g.z(), 0);
+
+    g.z.set(2);
+    g.z /= 2;
+    assert_eq!(g.z(), 1);
+    g.z *= 3;
+    assert_eq!(g.z(), 3);
+
+    g.z.mutate(|x| x / 3);
+    assert_eq!(g.z(), 1);
 
     dbg!(g);
 
