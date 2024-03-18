@@ -457,7 +457,7 @@ macro_rules! define_packed_vector {
             )*
 
             #[repr(C)]
-            $vis struct ProxyType {
+            pub struct ProxyType {
                 $(
                     $elem_vis $elem: _m!(@proxy $base, $elem_ty, $elem_start $($elem_end)?),
                 )*
