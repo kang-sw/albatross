@@ -1,3 +1,7 @@
+/* ============================================================================================== */
+/*                                            BIT INDEX                                           */
+/* ============================================================================================== */
+
 /// Quickly store set of fixed number of indexes.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BitIndexSet<const N_U64: usize> {
@@ -254,4 +258,70 @@ fn __test_bits() {
 
     assert!(other_bits == bits);
     assert!(bits == Default::default());
+}
+
+/* ============================================================================================== */
+/*                                         SCOPED INTEGER                                         */
+/* ============================================================================================== */
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ScopedInt<const MIN: i32, const MAX: i32>(i32);
+
+impl<const MIN: i32, const MAX: i32> ScopedInt<MIN, MAX> {
+    pub const MIN: i32 = MIN;
+    pub const MAX: i32 = MAX;
+
+    pub const fn new(value: i32) -> Self {
+        assert!(value >= MIN && value <= MAX);
+        Self(value)
+    }
+
+    pub fn raw(&self) -> i32 {
+        self.0
+    }
+}
+
+impl<const MIN: i32, const MAX: i32> std::ops::Deref for ScopedInt<MIN, MAX> {
+    type Target = i32;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<const MIN: i32, const MAX: i32> From<i32> for ScopedInt<MIN, MAX> {
+    fn from(value: i32) -> Self {
+        Self::new(value)
+    }
+}
+
+impl<const MIN: i32, const MAX: i32> From<ScopedInt<MIN, MAX>> for i32 {
+    fn from(value: ScopedInt<MIN, MAX>) -> Self {
+        value.0
+    }
+}
+
+impl<const MIN: i32, const MAX: i32> From<u32> for ScopedInt<MIN, MAX> {
+    fn from(value: u32) -> Self {
+        Self::new(value as _)
+    }
+}
+
+impl<const MIN: i32, const MAX: i32> From<ScopedInt<MIN, MAX>> for u32 {
+    fn from(value: ScopedInt<MIN, MAX>) -> Self {
+        value.0 as _
+    }
+}
+
+impl<const MIN: i32, const MAX: i32> From<u64> for ScopedInt<MIN, MAX> {
+    fn from(value: u64) -> Self {
+        Self::new(value as _)
+    }
+}
+
+impl<const MIN: i32, const MAX: i32> From<ScopedInt<MIN, MAX>> for u64 {
+    fn from(value: ScopedInt<MIN, MAX>) -> Self {
+        value.0 as _
+    }
 }

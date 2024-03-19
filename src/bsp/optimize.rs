@@ -10,7 +10,7 @@ use super::TreeNode;
 use super::TreeNodeLeaf;
 use super::TreeNodeSplit;
 
-use crate::bitindex::BitIndexSet;
+use crate::bits::BitIndexSet;
 use crate::primitive::AabbRect;
 use crate::primitive::Number;
 use crate::primitive::Vector;
