@@ -2,6 +2,10 @@
 /*                                            BIT INDEX                                           */
 /* ============================================================================================== */
 
+use std::ops::{Bound, RangeBounds};
+
+const WORD_BITS: usize = 64;
+
 /// Quickly store set of fixed number of indexes.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FixedIntSet<const N_U64: usize> {
@@ -16,7 +20,7 @@ impl<const N: usize> Default for FixedIntSet<N> {
 
 impl<const N: usize> FixedIntSet<N> {
     pub const fn capacity() -> usize {
-        N * 64
+        N * WORD_BITS
     }
 
     pub fn len(&self) -> usize {
@@ -28,6 +32,25 @@ impl<const N: usize> FixedIntSet<N> {
     pub const fn all() -> Self {
         Self {
             bits: [u64::MAX; N],
+        }
+    }
+
+    pub const fn all_until(mut until: usize) -> Self {
+        Self {
+            bits: {
+                let mut bits = [0; N];
+                let mut cursor = 0;
+
+                while cursor < N {
+                    let fill = if until < WORD_BITS { until } else { 64 };
+                    until = until.saturating_sub(WORD_BITS);
+
+                    bits[cursor] = (1 << fill) - 1;
+                    cursor += 1;
+                }
+
+                bits
+            },
         }
     }
 
@@ -45,17 +68,48 @@ impl<const N: usize> FixedIntSet<N> {
     }
 
     pub fn set(&mut self, index: usize) {
-        let (i, j) = (index / 64, index % 64);
+        let (i, j) = (index / WORD_BITS, index % 64);
         self.bits[i] |= 1 << j;
     }
 
+    pub fn assign_range(&mut self, range: impl RangeBounds<usize>, value: bool) {
+        let start = match range.start_bound() {
+            Bound::Included(v) => *v,
+            Bound::Excluded(v) => *v + 1,
+            Bound::Unbounded => 0,
+        };
+
+        let end = match range.end_bound() {
+            Bound::Included(v) => *v + 1,
+            Bound::Excluded(v) => *v,
+            Bound::Unbounded => WORD_BITS * N,
+        };
+
+        self._assign_n(start, end, value)
+    }
+
+    fn _assign_n(&mut self, mut start: usize, end: usize, value: bool) {
+        debug_assert!(start <= end);
+
+        let modulo = start % WORD_BITS;
+        let unaligned_start = start - modulo;
+        start = unaligned_start + WORD_BITS;
+
+        // Apply unaligned access
+        todo!();
+
+        fn make_word(start: usize, end: usize) -> u64 {
+            ((1 << (end - start)) - 1) << start
+        }
+    }
+
     pub fn unset(&mut self, index: usize) {
-        let (i, j) = (index / 64, index % 64);
+        let (i, j) = (index / WORD_BITS, index % 64);
         self.bits[i] &= !(1 << j);
     }
 
     pub fn get(&self, index: usize) -> bool {
-        let (i, j) = (index / 64, index % 64);
+        let (i, j) = (index / WORD_BITS, index % 64);
         (self.bits[i] & (1 << j)) != 0
     }
 
@@ -92,8 +146,8 @@ impl<const N: usize> FixedIntSet<N> {
         true
     }
 
-    pub fn iter(&self) -> BitIndexSetIter<N> {
-        BitIndexSetIter {
+    pub fn iter(&self) -> FixedIntSetIter<N> {
+        FixedIntSetIter {
             bits: &self.bits,
             cache: self.bits[0],
             index: 0,
@@ -201,13 +255,13 @@ impl<const N: usize> std::fmt::Debug for FixedIntSet<N> {
     }
 }
 
-pub struct BitIndexSetIter<'a, const N: usize> {
+pub struct FixedIntSetIter<'a, const N: usize> {
     bits: &'a [u64; N],
     cache: u64,
     index: usize,
 }
 
-impl<'a, const N: usize> Iterator for BitIndexSetIter<'a, N> {
+impl<'a, const N: usize> Iterator for FixedIntSetIter<'a, N> {
     type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -224,7 +278,7 @@ impl<'a, const N: usize> Iterator for BitIndexSetIter<'a, N> {
         let trailing_zeros = self.cache.trailing_zeros() as usize;
         self.cache &= self.cache - 1;
 
-        Some(self.index * 64 + trailing_zeros)
+        Some(self.index * WORD_BITS + trailing_zeros)
     }
 }
 
