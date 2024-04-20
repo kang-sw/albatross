@@ -11,6 +11,10 @@ slab = "0.4"
 tap = "1"
 fixed = { version = "1", features = ["num-traits"], optional = true }
 
+ahash = "0.8"
+bitvec = "1"
+nd = { version = "0.15", package = "ndarray" }
+
 num = "0.4"
 thiserror = "1"
 
