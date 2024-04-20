@@ -2,15 +2,17 @@ use std::{hash::Hash, marker::PhantomData};
 
 use ahash::HashMap;
 use bitvec::prelude::BitBox;
-use nd::prelude::ArrayViewMut3;
+use nd::prelude::{ArrayViewMut, ArrayViewMut3};
 use serde::de::value;
 use tap::prelude::Pipe;
 
 pub trait GridIndex: Clone + Copy + Hash + PartialEq + Eq + std::fmt::Debug {
-    const EXTENT: [usize; 3];
+    type Dim: nd::Dimension;
+
+    fn extent() -> Self::Dim;
 
     fn as_linear_buffer_index(self) -> usize;
-    fn as_index(self) -> [usize; 3];
+    fn as_index(self) -> Self::Dim;
 
     /// Larger value will be used to determine when we should escape out of sparse state. Smaller
     /// value will be used to determine when we should transition into sparse state from dense
@@ -100,8 +102,12 @@ where
     }
 
     /// Destination buffer extent MUST be equal with `I::EXTENT.prod()`
-    pub fn dump_data_with_pred(&self, mut dst: ArrayViewMut3<T>, should_copy: impl Fn(&T) -> bool) {
-        assert!(dst.dim().pipe(|d| [d.0, d.1, d.2]) == I::EXTENT);
+    pub fn dump_data_with_pred(
+        &self,
+        mut dst: ArrayViewMut<T, I::Dim>,
+        should_copy: impl Fn(&T) -> bool,
+    ) {
+        assert!(dst.raw_dim() == I::extent());
 
         match self {
             VarGrid3::Monostate(value) => {
@@ -131,7 +137,7 @@ where
         }
     }
 
-    pub fn dump_data(&self, dst: ArrayViewMut3<T>) {
+    pub fn dump_data(&self, dst: ArrayViewMut<T, I::Dim>) {
         self.dump_data_with_pred(dst, |_| true)
     }
 }
@@ -201,12 +207,12 @@ where
         &mut self.0
     }
 
-    pub fn view(&self) -> nd::ArrayView3<T> {
-        nd::ArrayView3::from_shape(I::EXTENT, self.data()).unwrap()
+    pub fn view(&self) -> nd::ArrayView<T, I::Dim> {
+        nd::ArrayView::from_shape(I::extent(), self.data()).unwrap()
     }
 
-    pub fn view_mut(&mut self) -> nd::ArrayViewMut3<T> {
-        nd::ArrayViewMut3::from_shape(I::EXTENT, self.data_mut()).unwrap()
+    pub fn view_mut(&mut self) -> nd::ArrayViewMut<T, I::Dim> {
+        nd::ArrayViewMut::from_shape(I::extent(), self.data_mut()).unwrap()
     }
 }
 
