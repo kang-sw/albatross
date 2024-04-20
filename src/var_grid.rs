@@ -2,9 +2,8 @@ use std::{hash::Hash, marker::PhantomData};
 
 use ahash::HashMap;
 use bitvec::prelude::BitBox;
-use nd::prelude::{ArrayViewMut, ArrayViewMut3};
-use serde::de::value;
-use tap::prelude::Pipe;
+use nd::prelude::ArrayViewMut;
+use nd::Dimension as _;
 
 pub trait GridIndex: Clone + Copy + Hash + PartialEq + Eq + std::fmt::Debug {
     type Dim: nd::Dimension;
@@ -12,7 +11,7 @@ pub trait GridIndex: Clone + Copy + Hash + PartialEq + Eq + std::fmt::Debug {
     fn extent() -> Self::Dim;
 
     fn as_linear_buffer_index(self) -> usize;
-    fn as_index(self) -> Self::Dim;
+    fn as_grid_index(self) -> Self::Dim;
 
     /// Larger value will be used to determine when we should escape out of sparse state. Smaller
     /// value will be used to determine when we should transition into sparse state from dense
@@ -30,7 +29,7 @@ pub trait GridIndex: Clone + Copy + Hash + PartialEq + Eq + std::fmt::Debug {
 }
 
 #[derive(Clone, Debug)]
-pub enum VarGrid3<I, T> {
+pub enum VarGrid<I, T> {
     /// Monostate container.
     Monostate(T),
 
@@ -44,7 +43,7 @@ pub enum VarGrid3<I, T> {
     Dense(DenseData<I, T>),
 }
 
-impl<I, T> Default for VarGrid3<I, T>
+impl<I, T> Default for VarGrid<I, T>
 where
     T: Default,
 {
@@ -53,7 +52,7 @@ where
     }
 }
 
-impl<I, T> VarGrid3<I, T>
+impl<I, T> VarGrid<I, T>
 where
     I: GridIndex,
     T: Default + Clone + Copy,
@@ -64,16 +63,16 @@ where
 
     pub fn get(&self, pos: I) -> T {
         match self {
-            VarGrid3::Monostate(value) => *value,
-            VarGrid3::Sparse(sparse) => {
+            VarGrid::Monostate(value) => *value,
+            VarGrid::Sparse(sparse) => {
                 if let Some(value) = sparse.get(&pos) {
                     *value
                 } else {
                     sparse.bg
                 }
             }
-            VarGrid3::Dense(dense) => dense.data()[pos.as_linear_buffer_index()],
-            VarGrid3::PaletteDense(_) => todo!(),
+            VarGrid::Dense(dense) => dense.data()[pos.as_linear_buffer_index()],
+            VarGrid::PaletteDense(_) => todo!(),
         }
     }
 
@@ -91,18 +90,28 @@ where
 
     #[cold]
     fn init_dense_buffer(&mut self) -> &mut DenseData<I, T> {
-        match self {
-            VarGrid3::Monostate(value) => {
-                todo!()
+        let dense = match self {
+            VarGrid::Monostate(value) => DenseData(
+                vec![*value; I::extent().size()].into_boxed_slice(),
+                Default::default(),
+            ),
+            VarGrid::PaletteDense(_) | VarGrid::Sparse(_) => {
+                todo!("implement this on demand; currently this method is editor-mode only.")
             }
-            VarGrid3::Sparse(_) => todo!(),
-            VarGrid3::Dense(_) => todo!(),
-            VarGrid3::PaletteDense(_) => todo!(),
-        }
+            VarGrid::Dense(_) => unreachable!(),
+        };
+
+        *self = VarGrid::Dense(dense);
+
+        let VarGrid::Dense(dense) = self else {
+            unreachable!()
+        };
+
+        dense
     }
 
     /// Destination buffer extent MUST be equal with `I::EXTENT.prod()`
-    pub fn dump_data_with_pred(
+    pub fn dump_data_with_src_pred(
         &self,
         mut dst: ArrayViewMut<T, I::Dim>,
         should_copy: impl Fn(&T) -> bool,
@@ -110,21 +119,21 @@ where
         assert!(dst.raw_dim() == I::extent());
 
         match self {
-            VarGrid3::Monostate(value) => {
+            VarGrid::Monostate(value) => {
                 if should_copy(value) {
                     dst.fill(*value);
                 }
             }
-            VarGrid3::Sparse(sparse) => {
+            VarGrid::Sparse(sparse) => {
                 if should_copy(&sparse.bg) {
                     dst.fill(sparse.bg);
                 }
 
                 for (&coord, &cell) in sparse.iter() {
-                    dst[coord.as_index()] = cell;
+                    dst[coord.as_grid_index()] = cell;
                 }
             }
-            VarGrid3::Dense(dense) => {
+            VarGrid::Dense(dense) => {
                 nd::Zip::from(&mut dst)
                     .and(&dense.view())
                     .for_each(|dst, src| {
@@ -133,12 +142,12 @@ where
                         }
                     });
             }
-            VarGrid3::PaletteDense(_) => todo!(),
+            VarGrid::PaletteDense(_) => todo!(),
         }
     }
 
     pub fn dump_data(&self, dst: ArrayViewMut<T, I::Dim>) {
-        self.dump_data_with_pred(dst, |_| true)
+        self.dump_data_with_src_pred(dst, |_| true)
     }
 }
 
