@@ -4,17 +4,17 @@
 
 /// Quickly store set of fixed number of indexes.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct BitIndexSet<const N_U64: usize> {
+pub struct FixedIntSet<const N_U64: usize> {
     bits: [u64; N_U64],
 }
 
-impl<const N: usize> Default for BitIndexSet<N> {
+impl<const N: usize> Default for FixedIntSet<N> {
     fn default() -> Self {
         Self { bits: [0; N] }
     }
 }
 
-impl<const N: usize> BitIndexSet<N> {
+impl<const N: usize> FixedIntSet<N> {
     pub const fn capacity() -> usize {
         N * 64
     }
@@ -101,7 +101,7 @@ impl<const N: usize> BitIndexSet<N> {
     }
 }
 
-impl<const N: usize> std::iter::FromIterator<usize> for BitIndexSet<N> {
+impl<const N: usize> std::iter::FromIterator<usize> for FixedIntSet<N> {
     fn from_iter<I: IntoIterator<Item = usize>>(iter: I) -> Self {
         let mut result = Self::default();
         for i in iter {
@@ -111,7 +111,7 @@ impl<const N: usize> std::iter::FromIterator<usize> for BitIndexSet<N> {
     }
 }
 
-impl<const N: usize> std::ops::Index<usize> for BitIndexSet<N> {
+impl<const N: usize> std::ops::Index<usize> for FixedIntSet<N> {
     type Output = bool;
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -123,7 +123,7 @@ impl<const N: usize> std::ops::Index<usize> for BitIndexSet<N> {
     }
 }
 
-impl<const N: usize> std::ops::BitAnd for BitIndexSet<N> {
+impl<const N: usize> std::ops::BitAnd for FixedIntSet<N> {
     type Output = Self;
 
     fn bitand(self, rhs: Self) -> Self::Output {
@@ -135,7 +135,7 @@ impl<const N: usize> std::ops::BitAnd for BitIndexSet<N> {
     }
 }
 
-impl<const N: usize> std::ops::BitOr for BitIndexSet<N> {
+impl<const N: usize> std::ops::BitOr for FixedIntSet<N> {
     type Output = Self;
 
     fn bitor(self, rhs: Self) -> Self::Output {
@@ -147,7 +147,7 @@ impl<const N: usize> std::ops::BitOr for BitIndexSet<N> {
     }
 }
 
-impl<const N: usize> std::ops::BitXor for BitIndexSet<N> {
+impl<const N: usize> std::ops::BitXor for FixedIntSet<N> {
     type Output = Self;
 
     fn bitxor(self, rhs: Self) -> Self::Output {
@@ -159,7 +159,7 @@ impl<const N: usize> std::ops::BitXor for BitIndexSet<N> {
     }
 }
 
-impl<const N: usize> std::ops::Not for BitIndexSet<N> {
+impl<const N: usize> std::ops::Not for FixedIntSet<N> {
     type Output = Self;
 
     fn not(self) -> Self::Output {
@@ -171,7 +171,7 @@ impl<const N: usize> std::ops::Not for BitIndexSet<N> {
     }
 }
 
-impl<const N: usize> std::ops::BitAndAssign for BitIndexSet<N> {
+impl<const N: usize> std::ops::BitAndAssign for FixedIntSet<N> {
     fn bitand_assign(&mut self, rhs: Self) {
         for i in 0..N {
             self.bits[i] &= rhs.bits[i];
@@ -179,7 +179,7 @@ impl<const N: usize> std::ops::BitAndAssign for BitIndexSet<N> {
     }
 }
 
-impl<const N: usize> std::ops::BitOrAssign for BitIndexSet<N> {
+impl<const N: usize> std::ops::BitOrAssign for FixedIntSet<N> {
     fn bitor_assign(&mut self, rhs: Self) {
         for i in 0..N {
             self.bits[i] |= rhs.bits[i];
@@ -187,7 +187,7 @@ impl<const N: usize> std::ops::BitOrAssign for BitIndexSet<N> {
     }
 }
 
-impl<const N: usize> std::ops::BitXorAssign for BitIndexSet<N> {
+impl<const N: usize> std::ops::BitXorAssign for FixedIntSet<N> {
     fn bitxor_assign(&mut self, rhs: Self) {
         for i in 0..N {
             self.bits[i] ^= rhs.bits[i];
@@ -195,7 +195,7 @@ impl<const N: usize> std::ops::BitXorAssign for BitIndexSet<N> {
     }
 }
 
-impl<const N: usize> std::fmt::Debug for BitIndexSet<N> {
+impl<const N: usize> std::fmt::Debug for FixedIntSet<N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_list().entries(self.iter()).finish()
     }
@@ -233,7 +233,7 @@ impl<'a, const N: usize> Iterator for BitIndexSetIter<'a, N> {
 fn __test_bits() {
     use tap::Tap;
 
-    let mut bits = BitIndexSet::<3>::default();
+    let mut bits = FixedIntSet::<3>::default();
 
     let trues = [0, 4, 5, 9, 11, 2, 52, 161, 32, 144, 33, 64, 98, 45];
     let sorted_trues = { trues }.tap_mut(|x| x.sort());

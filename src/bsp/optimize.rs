@@ -10,7 +10,7 @@ use super::TreeNode;
 use super::TreeNodeLeaf;
 use super::TreeNodeSplit;
 
-use crate::bits::BitIndexSet;
+use crate::bits::FixedIntSet;
 use crate::primitive::AabbRect;
 use crate::primitive::Number;
 use crate::primitive::Vector;
@@ -108,7 +108,7 @@ pub struct OptimizeParameter {
 
     /// For axes specified in this set, the final variance on choosing axis to split is
     /// amplified by the axis length ratio to make the space split square as possible.
-    pub square_split_axes: BitIndexSet<1>,
+    pub square_split_axes: FixedIntSet<1>,
 
     /// Specifies the height at which the tree should start balancing. This is useful for
     /// trees that are expected to be very large, as it can be beneficial to allow the
@@ -138,7 +138,7 @@ impl OptimizeParameter {
             split_strategy: Default::default(),
             minimum_length: 0.,
             suboptimal_split_count: 1,
-            square_split_axes: BitIndexSet::empty(),
+            square_split_axes: FixedIntSet::empty(),
             balancing_start_height: 4,
             snap_size: 0.,
         }
@@ -153,7 +153,7 @@ impl OptimizeParameter {
             split_strategy: Default::default(),
             minimum_length: 0.,
             suboptimal_split_count: 1,
-            square_split_axes: BitIndexSet::empty(),
+            square_split_axes: FixedIntSet::empty(),
             balancing_start_height: 0,
             snap_size: 0.,
         }
