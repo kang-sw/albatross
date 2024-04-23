@@ -1,7 +1,7 @@
 use std::collections::{BTreeSet, HashSet, VecDeque};
 
 use albatross::{
-    bitindex::BitIndexSet,
+    bits::FixedIntSet,
     bsp::{self, OptimizeParameter, TraceComponent, TraceShape, TreeElement},
     primitive::{AabbRect, VectorExt},
 };
@@ -129,7 +129,7 @@ impl Default for Model {
             tree_optimize: bsp::OptimizeParameter::moderate(4).with(|x| {
                 x.minimum_length = 2.;
                 x.max_collapse_height = u16::MAX;
-                x.square_split_axes = BitIndexSet::all();
+                x.square_split_axes = FixedIntSet::all();
             }),
 
             stats: Default::default(),

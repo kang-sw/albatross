@@ -1,0 +1,9 @@
+[package]
+name = "albatross-var-grid"
+version = "0.0.1"
+edition = "2021"
+
+[dependencies]
+ahash = { workspace = true }
+nd = { workspace = true }
+bitvec = { workspace = true }

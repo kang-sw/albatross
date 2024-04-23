@@ -1,16 +1,27 @@
-[package]
-name = "albatross"
-description = "Set of algorithms for personal usage."
-version = "0.1.0"
-edition = "2021"
+[workspace]
+resolver = "2"
+members = [
+    "crates/albatross",
+    "crates/bitworks",
+    "crates/var-grid",
+    "crates/timer-wheel",
+]
+exclude = ["examples/bsp-ui"]
 
-[dependencies]
+[workspace.dependencies]
+albatross = { path = "crates/albatross" }
+bitworks = { path = "crates/bitworks", package = "albatross-bitworks" }
+var-grid = { path = "crates/var-grid", package = "albatross-var-grid" }
+timer-wheel = { path = "crates/timer-wheel", package = "albatross-timer-wheel" }
+
+# ································································································ #
+
 slotmap = "1"
 slab = "0.4"
 
-tap = "1"
-fixed = { version = "1", features = ["num-traits"], optional = true }
+fixed = { version = "1", features = ["num-traits"] }
 
+tap = "1"
 ahash = "0.8"
 bitvec = "1"
 nd = { version = "0.15", package = "ndarray" }
@@ -23,13 +34,10 @@ enum-as-inner = "0.6"
 
 typenum = "1"
 
-nalgebra = { version = "0.32", optional = true }
-glam = { version = "0.25", optional = true, features = ["serde"] }
+nalgebra = { version = "0.32" }
+glam = { version = "0.25", features = ["serde"] }
 
-serde = { version = "1", optional = true, features = ["derive"] }
-bevy_reflect = { version = "0.13", optional = true, features = ["bevy_math"] }
+serde = { version = "1", features = ["derive"] }
+bevy_reflect = { version = "0.13", features = ["bevy_math"] }
 
 static_assertions = "1"
-
-[features]
-reflect = ["dep:bevy_reflect"]

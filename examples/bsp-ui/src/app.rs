@@ -1,7 +1,7 @@
 mod boids;
 
 use albatross::{
-    bitindex::BitIndexSet,
+    bits::FixedIntSet,
     bsp::{OptimizeParameter, TraceShape},
     primitive::{AabbRect, DirectionSegment},
 };
@@ -509,9 +509,9 @@ impl eframe::App for TemplateApp {
                             .changed()
                         {
                             *square_split_axes = if square_shape {
-                                BitIndexSet::all()
+                                FixedIntSet::all()
                             } else {
-                                BitIndexSet::empty()
+                                FixedIntSet::empty()
                             };
 
                             collapse_all = true;

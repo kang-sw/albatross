@@ -1,7 +1,7 @@
 use std::{hash::Hash, marker::PhantomData};
 
 use ahash::HashMap;
-use bitvec::prelude::BitBox;
+use bitvec::boxed::BitBox;
 use nd::prelude::ArrayViewMut;
 use nd::Dimension as _;
 

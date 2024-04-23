@@ -5,6 +5,8 @@ authors = ["Emil Ernerfeldt <emil.ernerfeldt@gmail.com>"]
 edition = "2021"
 rust-version = "1.72"
 
+[workspace]
+
 [dependencies]
 egui = "0.26.0"
 eframe = { version = "0.26.0", default-features = false, features = [
@@ -25,7 +27,7 @@ web-time = "1"
 
 tap = "1"
 
-albatross = { path = "../.." }
+albatross = { path = "../../crates/albatross" }
 
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

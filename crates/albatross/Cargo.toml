@@ -1,0 +1,40 @@
+[package]
+name = "albatross"
+description = "Set of algorithms for personal usage."
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bitworks = { workspace = true }
+var-grid = { workspace = true }
+
+# ································································································ #
+
+slotmap = { workspace = true }
+slab = { workspace = true }
+
+tap = { workspace = true }
+fixed = { workspace = true }
+
+ahash = { workspace = true }
+bitvec = { workspace = true }
+nd = { workspace = true }
+
+num = { workspace = true }
+thiserror = { workspace = true }
+
+derive_more = { workspace = true }
+enum-as-inner = { workspace = true }
+
+typenum = { workspace = true }
+
+nalgebra = { workspace = true, optional = true }
+glam = { workspace = true, optional = true }
+
+serde = { workspace = true, optional = true }
+bevy_reflect = { workspace = true, optional = true }
+
+static_assertions = { workspace = true }
+
+[features]
+reflect = ["dep:bevy_reflect"]
