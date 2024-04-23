@@ -1,0 +1,27 @@
+[package]
+name = "tm-wheel"
+version = "0.1.1"
+edition = "2021"
+description = "Low-level hierachical timing wheel based timer driver implementation"
+license = "MIT"
+repository = "https://github.com/kang-sw/tm-wheel-rs"
+authors = ["kang-sw <ki6080@gmail.com>"]
+categories = ["embedded", "no-std", "algorithms", "data-structures"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+slab = { version = "0.4", optional = true }
+
+[features]
+default = ["std"]
+std = ["dep:slab"]
+
+[dev-dependencies]
+fastrand = "2"
+criterion = "0.5"
+
+[[bench]]
+name = "many"
+harness = false
+required-features = ["std"]

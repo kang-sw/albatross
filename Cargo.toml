@@ -4,7 +4,7 @@ members = [
     "crates/albatross",
     "crates/bitworks",
     "crates/var-grid",
-    "crates/timer-wheel",
+    "crates/tm-wheel",
 ]
 exclude = ["examples/bsp-ui"]
 
@@ -12,7 +12,7 @@ exclude = ["examples/bsp-ui"]
 albatross = { path = "crates/albatross" }
 bitworks = { path = "crates/bitworks", package = "albatross-bitworks" }
 var-grid = { path = "crates/var-grid", package = "albatross-var-grid" }
-timer-wheel = { path = "crates/timer-wheel", package = "albatross-timer-wheel" }
+tm-wheel = { path = "crates/tm-wheel" }
 
 # ································································································ #
 
