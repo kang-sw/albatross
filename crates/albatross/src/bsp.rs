@@ -121,7 +121,6 @@ pub struct TraceComponent<T: Vector> {
     pub shape: TraceShape<T>,
 }
 
-///
 #[derive(Debug, Clone, Copy)]
 pub enum TraceShape<V: Vector> {
     /// Value is extent of each axis for AABB.

@@ -317,8 +317,9 @@ fn __test_bits() {
 /*                                         SCOPED INTEGER                                         */
 /* ============================================================================================== */
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub struct ScopedInt<const MIN: i32, const MAX: i32>(i32);
 
 impl<const MIN: i32, const MAX: i32> ScopedInt<MIN, MAX> {

@@ -14,7 +14,7 @@ slotmap = { workspace = true }
 slab = { workspace = true }
 
 tap = { workspace = true }
-fixed = { workspace = true }
+# fixed = { workspace = true }
 
 ahash = { workspace = true }
 bitvec = { workspace = true }
@@ -32,9 +32,5 @@ nalgebra = { workspace = true, optional = true }
 glam = { workspace = true, optional = true }
 
 serde = { workspace = true, optional = true }
-bevy_reflect = { workspace = true, optional = true }
 
 static_assertions = { workspace = true }
-
-[features]
-reflect = ["dep:bevy_reflect"]
