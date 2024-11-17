@@ -136,11 +136,11 @@ impl OptimizeParameter {
             max_collapse_height: 8,
             balancing: 0.3,
             split_strategy: Default::default(),
-            minimum_length: 0.,
+            minimum_length: 1.,
             suboptimal_split_count: 1,
             square_split_axes: FixedIntSet::empty(),
             balancing_start_height: 4,
-            snap_size: 0.,
+            snap_size: 1.,
         }
     }
 

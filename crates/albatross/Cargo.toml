@@ -14,7 +14,7 @@ slotmap = { workspace = true }
 slab = { workspace = true }
 
 tap = { workspace = true }
-# fixed = { workspace = true }
+fixed = { workspace = true }
 
 ahash = { workspace = true }
 bitvec = { workspace = true }

@@ -281,7 +281,6 @@ impl<T: Number, const D: usize> Vector for nalgebra::SVector<T, D> {
 mod _impl_fixed {
     use super::Number;
 
-    #[cfg(any())]
     use fixed::*;
 
     macro_rules! define_minmax {
@@ -324,8 +323,7 @@ mod _impl_fixed {
             }
         };
 
-        (fx, $ty:ident <$t:ident>, $tr:ident $(, $arg:tt)*) => {
-            #[cfg(any())]
+        (fx, $ty:ident <$t:ident>, $tr:ident) => {
             impl<$t: fixed::types::extra::$tr> Number for $ty<$t> {
                 const MINIMUM: Self = Self::MIN;
                 const MAXIMUM: Self = Self::MAX;
@@ -343,8 +341,6 @@ mod _impl_fixed {
                 fn from_int(value: i64) -> Self {
                     Self::const_from_int(value as _)
                 }
-
-                define_minmax!($($arg)*);
             }
         };
 
